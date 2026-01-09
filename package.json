@@ -1,6 +1,6 @@
 {
   "name": "cluttry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cluttry - Git worktree management for parallel AI-agent sessions",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,16 @@
     "format": "prettier --write 'src/**/*.ts'",
     "prepare": "npm run build"
   },
-  "keywords": ["git", "worktree", "cli", "ai", "agent", "claude", "vibe", "bun"],
+  "keywords": [
+    "git",
+    "worktree",
+    "cli",
+    "ai",
+    "agent",
+    "claude",
+    "vibe",
+    "bun"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0",
