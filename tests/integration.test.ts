@@ -1865,4 +1865,124 @@ describe('cry CLI integration tests', () => {
       expect(result.stdout).toContain('feature-two');
     }, TEST_TIMEOUT);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // cry gc - garbage collection for stale sessions
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('cry gc', () => {
+    it('shows nothing to clean when no stale sessions', async () => {
+      repo = createRepo('gc-nothing');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree (valid)
+      await runCliSuccess(['spawn', 'feature-valid', '--new'], repo.root);
+
+      // Run gc
+      const result = await runCliSuccess(['gc', '--dry-run'], repo.root);
+
+      expect(result.stdout).toContain('Nothing to clean');
+    }, TEST_TIMEOUT);
+
+    it('detects stale session when worktree path is deleted', async () => {
+      repo = createRepo('gc-stale-path');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-stale', '--new'], repo.root);
+
+      // Manually delete the worktree directory (simulate stale)
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-stale"`, { encoding: 'utf-8' });
+
+      // Run gc --dry-run to see what would be cleaned
+      const result = await runCliSuccess(['gc', '--dry-run'], repo.root);
+
+      expect(result.stdout).toContain('Stale session manifests');
+      expect(result.stdout).toContain('feature-stale');
+      expect(result.stdout).toContain('worktree path missing');
+      expect(result.stdout).toContain('Dry run mode');
+    }, TEST_TIMEOUT);
+
+    it('removes stale session with --yes', async () => {
+      repo = createRepo('gc-remove-stale');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-remove', '--new'], repo.root);
+
+      // Verify session exists
+      const sessionsBefore = listSessionFiles(repo.root);
+      expect(sessionsBefore.length).toBe(1);
+
+      // Manually delete the worktree directory
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-remove"`, { encoding: 'utf-8' });
+
+      // Run gc --yes to remove
+      const result = await runCliSuccess(['gc', '--yes'], repo.root);
+
+      expect(result.stdout).toContain('Removed session');
+      expect(result.stdout).toContain('feature-remove');
+
+      // Verify session is removed
+      const sessionsAfter = listSessionFiles(repo.root);
+      expect(sessionsAfter.length).toBe(0);
+    }, TEST_TIMEOUT);
+
+    it('--manifests-only skips git worktree prune', async () => {
+      repo = createRepo('gc-manifests-only');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-manifests', '--new'], repo.root);
+
+      // Delete the worktree path
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-manifests"`, { encoding: 'utf-8' });
+
+      // Run gc with --manifests-only
+      const result = await runCliSuccess(['gc', '--yes', '--manifests-only'], repo.root);
+
+      expect(result.stdout).toContain('Removed session');
+      // Should not mention git worktree prune
+      expect(result.stdout).not.toContain('Pruned');
+    }, TEST_TIMEOUT);
+
+    it('handles multiple stale sessions', async () => {
+      repo = createRepo('gc-multiple');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn multiple worktrees
+      await runCliSuccess(['spawn', 'feature-a', '--new'], repo.root);
+      await runCliSuccess(['spawn', 'feature-b', '--new'], repo.root);
+      await runCliSuccess(['spawn', 'feature-c', '--new'], repo.root);
+
+      // Delete two worktree paths (leave one valid)
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-a"`, { encoding: 'utf-8' });
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-b"`, { encoding: 'utf-8' });
+
+      // Run gc --dry-run
+      const dryResult = await runCliSuccess(['gc', '--dry-run'], repo.root);
+
+      expect(dryResult.stdout).toContain('feature-a');
+      expect(dryResult.stdout).toContain('feature-b');
+      expect(dryResult.stdout).not.toContain('feature-c');
+
+      // Run gc --yes to remove
+      const result = await runCliSuccess(['gc', '--yes'], repo.root);
+
+      expect(result.stdout).toContain('Removed 2 stale session');
+
+      // Verify only one session remains
+      const sessionsAfter = listSessionFiles(repo.root);
+      expect(sessionsAfter.length).toBe(1);
+    }, TEST_TIMEOUT);
+  });
 });

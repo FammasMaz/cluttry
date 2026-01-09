@@ -21,6 +21,7 @@ import { shell } from './commands/shell.js';
 import { finish } from './commands/finish.js';
 import { explainCopy } from './commands/explain-copy.js';
 import { resume } from './commands/resume.js';
+import { gc } from './commands/gc.js';
 import type { SecretMode } from './lib/types.js';
 
 // Known subcommands - shorthand parsing must not interfere with these
@@ -36,6 +37,7 @@ const SUBCOMMANDS = new Set([
   'shell',
   'finish',
   'resume',
+  'gc',
   'help',
 ]);
 
@@ -270,6 +272,21 @@ program
     await resume(nameOrId, {
       agent: options.agent,
       cd: options.cd,
+    });
+  });
+
+// cry gc
+program
+  .command('gc')
+  .description('Clean up stale session manifests and git worktree references')
+  .option('--dry-run', 'Show what would be cleaned without making changes')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--manifests-only', 'Only remove stale manifests, skip git worktree prune')
+  .action(async (options) => {
+    await gc({
+      dryRun: options.dryRun,
+      yes: options.yes,
+      manifestsOnly: options.manifestsOnly,
     });
   });
 
