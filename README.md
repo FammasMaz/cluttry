@@ -122,6 +122,7 @@ Options:
   -n, --new            Create a new branch
   -p, --path <dir>     Explicit worktree path
   -b, --base <dir>     Base directory for worktrees
+  --base-branch <branch>  Base branch for PRs (default: current branch)
   -m, --mode <mode>    Secret handling: copy, symlink, or none (default: copy)
   -r, --run <cmd>      Command to run after creation
   -a, --agent <agent>  Launch agent: claude or none (default: none)
@@ -152,6 +153,9 @@ cry spawn feat-login --new --agent claude --finish-on-exit
 
 # Preview what files will be copied (dry run)
 cry spawn feature-test --new --dry-run
+
+# Specify base branch for PR target
+cry spawn feature-api --new --base-branch develop
 ```
 
 ### `cry list`

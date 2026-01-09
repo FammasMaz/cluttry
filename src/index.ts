@@ -127,6 +127,7 @@ program
   .option('-n, --new', 'Create a new branch (equivalent to git worktree add -b)')
   .option('-p, --path <dir>', 'Explicit path for the worktree')
   .option('-b, --base <dir>', 'Base directory for worktrees')
+  .option('--base-branch <branch>', 'Base branch for PRs (default: current branch)')
   .option('-m, --mode <mode>', 'Secret handling mode: copy, symlink, or none', 'copy')
   .option('-r, --run <cmd>', 'Command to run after creating worktree')
   .option('-a, --agent <agent>', 'Launch agent after setup: claude or none', 'none')
@@ -142,6 +143,7 @@ program
       new: options.new,
       path: options.path,
       base: options.base,
+      baseBranch: options.baseBranch,
       mode,
       run: options.run,
       agent: options.agent,

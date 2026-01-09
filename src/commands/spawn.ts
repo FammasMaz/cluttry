@@ -17,6 +17,8 @@ import {
   runCommand,
   commandExists,
   getCurrentBranch,
+  isDetachedHead,
+  getDefaultBranch,
 } from '../lib/git.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import { getDefaultWorktreePath } from '../lib/paths.js';
@@ -29,7 +31,8 @@ import { finish } from './finish.js';
 interface SpawnOptions {
   new?: boolean;
   path?: string;
-  base?: string;
+  base?: string;           // Base directory for worktrees
+  baseBranch?: string;     // Base branch for the new worktree (for PR target)
   mode?: SecretMode;
   run?: string;
   agent?: string;
@@ -193,11 +196,39 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   // Determine if we need to create the branch
   const needsNewBranch = options.new || !branchExists(branch, repoRoot);
 
-  // Get the base branch before creating the worktree
-  const baseBranch = getCurrentBranch(repoRoot) ?? 'main';
+  // Determine base branch with proper fallback chain:
+  // 1. User-provided --base-branch option
+  // 2. Current branch (if not detached)
+  // 3. Default branch (origin/HEAD or main/master)
+  // 4. Error if detached HEAD and no fallback
+  let baseBranch: string;
+  if (options.baseBranch) {
+    baseBranch = options.baseBranch;
+  } else if (isDetachedHead(repoRoot)) {
+    // Try to get default branch as fallback
+    const defaultBranch = getDefaultBranch(repoRoot);
+    if (defaultBranch) {
+      baseBranch = defaultBranch;
+      out.warn(`Detached HEAD detected. Using default branch '${defaultBranch}' as base.`);
+    } else {
+      out.error('Cannot determine base branch: HEAD is detached.');
+      out.info('Please specify a base branch with --base-branch <branch>');
+      process.exit(1);
+    }
+  } else {
+    const currentBranch = getCurrentBranch(repoRoot);
+    if (currentBranch) {
+      baseBranch = currentBranch;
+    } else {
+      // Fallback to default branch
+      const defaultBranch = getDefaultBranch(repoRoot);
+      baseBranch = defaultBranch ?? 'main';
+    }
+  }
 
   out.header('Creating worktree');
   out.log(`  Branch: ${out.fmt.branch(branch)}${needsNewBranch ? out.fmt.gray(' (new)') : ''}`);
+  out.log(`  Base:   ${out.fmt.branch(baseBranch)}`);
   out.log(`  Path:   ${out.fmt.path(worktreePath)}`);
   out.log(`  Mode:   ${out.fmt.cyan(mode)}`);
   out.newline();

@@ -70,7 +70,73 @@ export function branchExists(branch: string, cwd?: string): boolean {
  */
 export function getCurrentBranch(cwd?: string): string | null {
   try {
-    return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    // Returns 'HEAD' when in detached state
+    if (branch === 'HEAD') {
+      return null;
+    }
+    return branch;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if HEAD is detached (not on any branch)
+ */
+export function isDetachedHead(cwd?: string): boolean {
+  try {
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    return branch === 'HEAD';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the default branch name (from origin/HEAD or common defaults)
+ */
+export function getDefaultBranch(cwd?: string): string | null {
+  // Try origin/HEAD first
+  try {
+    const ref = git(['symbolic-ref', 'refs/remotes/origin/HEAD'], cwd);
+    // Returns something like "refs/remotes/origin/main"
+    const match = ref.match(/refs\/remotes\/origin\/(.+)$/);
+    if (match) {
+      return match[1];
+    }
+  } catch {
+    // origin/HEAD not set, try other methods
+  }
+
+  // Try to find main or master
+  for (const candidate of ['main', 'master']) {
+    if (branchExists(candidate, cwd)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the merge-base between two refs
+ */
+export function getMergeBase(ref1: string, ref2: string, cwd?: string): string | null {
+  try {
+    return git(['merge-base', ref1, ref2], cwd);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the upstream tracking branch for the current branch
+ */
+export function getUpstreamBranch(cwd?: string): string | null {
+  try {
+    const upstream = git(['rev-parse', '--abbrev-ref', '@{upstream}'], cwd);
+    return upstream;
   } catch {
     return null;
   }

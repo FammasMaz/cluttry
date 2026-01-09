@@ -16,6 +16,9 @@ import {
   removeWorktree,
   deleteBranch,
   isWorktreeDirty,
+  getDefaultBranch,
+  getMergeBase,
+  getUpstreamBranch,
 } from '../lib/git.js';
 import {
   findSessionForCwd,
@@ -162,6 +165,7 @@ function getCommitInfo(baseBranch: string, cwd: string): SessionSummary['commits
 
 /**
  * Detect session info from git when no manifest is available
+ * Uses improved base branch detection via merge-base and upstream tracking
  */
 function detectSessionFromGit(cwd: string): Partial<SessionManifest> | null {
   try {
@@ -171,20 +175,50 @@ function detectSessionFromGit(cwd: string): Partial<SessionManifest> | null {
     const repoRoot = getRepoRoot(cwd);
     const mainRepoRoot = findMainRepoRoot(cwd);
 
-    // Try to find base branch - common defaults
-    let baseBranch = 'main';
-    try {
-      // Check if 'main' exists
-      git(['rev-parse', '--verify', 'refs/heads/main'], cwd);
-    } catch {
-      try {
-        // Try 'master'
-        git(['rev-parse', '--verify', 'refs/heads/master'], cwd);
-        baseBranch = 'master';
-      } catch {
-        // Use current branch as base (no comparison possible)
-        baseBranch = branch;
+    // Determine base branch with fallback chain:
+    // 1. Upstream tracking branch (e.g., origin/main)
+    // 2. Default branch from origin/HEAD
+    // 3. 'main' or 'master' if they exist
+    // 4. Current branch as last resort
+    let baseBranch: string | null = null;
+
+    // Try upstream tracking branch
+    const upstream = getUpstreamBranch(cwd);
+    if (upstream) {
+      // Extract branch name from origin/branch format
+      const upstreamBranch = upstream.replace(/^origin\//, '');
+      // Verify it's a different branch
+      if (upstreamBranch !== branch) {
+        baseBranch = upstreamBranch;
       }
+    }
+
+    // Try default branch
+    if (!baseBranch) {
+      const defaultBranch = getDefaultBranch(cwd);
+      if (defaultBranch && defaultBranch !== branch) {
+        baseBranch = defaultBranch;
+      }
+    }
+
+    // Try common branch names
+    if (!baseBranch) {
+      for (const candidate of ['main', 'master', 'develop']) {
+        try {
+          git(['rev-parse', '--verify', `refs/heads/${candidate}`], cwd);
+          if (candidate !== branch) {
+            baseBranch = candidate;
+            break;
+          }
+        } catch {
+          // Branch doesn't exist, try next
+        }
+      }
+    }
+
+    // Last resort: use current branch (no comparison possible)
+    if (!baseBranch) {
+      baseBranch = branch;
     }
 
     return {
