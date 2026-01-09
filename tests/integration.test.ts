@@ -396,7 +396,9 @@ describe('cry CLI integration tests', () => {
       // Run doctor
       const result = await runCliSuccess(['doctor'], repo.root);
 
-      expect(result.stdout).toContain('pass');
+      // Check that config-related checks passed (shown with checkmark)
+      expect(result.stdout).toContain('✓ Config file');
+      expect(result.stdout).toContain('.cry.json exists');
     }, TEST_TIMEOUT);
 
     it('warns when config is missing', async () => {
