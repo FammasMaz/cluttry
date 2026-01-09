@@ -15,6 +15,7 @@ import {
 import { resolveBranchOrPath } from '../lib/paths.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import * as out from '../lib/output.js';
+import { fail, errors } from '../lib/errors.js';
 
 interface OpenOptions {
   cmd?: string;
@@ -58,14 +59,12 @@ function checkCommandAvailable(command: string, type: 'agent' | 'editor' | 'cust
     return true;
   }
 
-  out.error(`Command not found: ${command}`);
-
   if (type === 'agent') {
-    out.info('Install Claude Code: npm install -g @anthropic-ai/claude-code');
-    out.info('Or configure a different agent: cry config set agentCommand <command>');
+    fail(errors.agentNotFound(command));
   } else if (type === 'editor') {
-    out.info('Install VS Code CLI: https://code.visualstudio.com/docs/setup/mac#_launching-from-the-command-line');
-    out.info('Or configure a different editor: cry config set editorCommand <command>');
+    fail(errors.editorNotFound(command));
+  } else {
+    out.error(`Command not found: ${command}`);
   }
 
   return false;
@@ -74,8 +73,7 @@ function checkCommandAvailable(command: string, type: 'agent' | 'editor' | 'cust
 export async function open(branchOrPath: string | undefined, options: OpenOptions): Promise<void> {
   // Check if we're in a git repo
   if (!isGitRepo()) {
-    out.error('Not a git repository. Run this command from within a git repo.');
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   const repoRoot = getRepoRoot();
@@ -97,13 +95,8 @@ export async function open(branchOrPath: string | undefined, options: OpenOption
     if (currentWt) {
       resolved = { path: currentWt.path, branch: currentWt.branch };
     } else {
-      out.error('No worktree specified and not currently in a worktree.');
-      out.info('Usage: cry open <branch-or-path>');
-      out.info('Available worktrees:');
-      for (const wt of wtList) {
-        out.log(`  • ${wt.branch ?? '(detached)'} → ${wt.path}`);
-      }
-      process.exit(1);
+      const available = wtList.map(w => w.branch ?? w.path);
+      fail(errors.worktreeNotFound('(current directory)', available));
     }
   } else {
     // Resolve the worktree by name or path
@@ -111,12 +104,8 @@ export async function open(branchOrPath: string | undefined, options: OpenOption
   }
 
   if (!resolved) {
-    out.error(`Worktree not found: ${branchOrPath}`);
-    out.info('Available worktrees:');
-    for (const wt of wtList) {
-      out.log(`  • ${wt.branch ?? '(detached)'} → ${wt.path}`);
-    }
-    process.exit(1);
+    const available = wtList.map(w => w.branch ?? w.path);
+    fail(errors.worktreeNotFound(branchOrPath!, available));
   }
 
   const { path: wtPath, branch } = resolved;

@@ -25,6 +25,7 @@ import { getDefaultWorktreePath } from '../lib/paths.js';
 import { processSecrets, generateCopyPlan, formatCopyPlan } from '../lib/secrets.js';
 import { createSessionManifest } from '../lib/session.js';
 import * as out from '../lib/output.js';
+import { fail, errors } from '../lib/errors.js';
 import type { SecretMode } from '../lib/types.js';
 import { finish } from './finish.js';
 
@@ -150,8 +151,7 @@ async function showPostAgentMenu(
 export async function spawn(branch: string, options: SpawnOptions): Promise<void> {
   // Check if we're in a git repo
   if (!isGitRepo()) {
-    out.error('Not a git repository. Run this command from within a git repo.');
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   const repoRoot = getRepoRoot();
@@ -178,19 +178,14 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
 
   // Check if destination already exists
   if (existsSync(worktreePath)) {
-    out.error(`Destination already exists: ${worktreePath}`);
-    out.info('Remove it first or choose a different path with --path');
-    process.exit(1);
+    fail(errors.destinationExists(worktreePath));
   }
 
   // Check if worktree already exists for this branch
   const existingWorktrees = listWorktrees(repoRoot);
   const existingForBranch = existingWorktrees.find((w) => w.branch === branch);
   if (existingForBranch) {
-    out.error(`A worktree already exists for branch '${branch}'`);
-    out.info(`Path: ${existingForBranch.worktree}`);
-    out.info('Remove it first with: cry rm ' + branch);
-    process.exit(1);
+    fail(errors.worktreeAlreadyExists(branch, existingForBranch.worktree));
   }
 
   // Determine if we need to create the branch
@@ -211,9 +206,7 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
       baseBranch = defaultBranch;
       out.warn(`Detached HEAD detected. Using default branch '${defaultBranch}' as base.`);
     } else {
-      out.error('Cannot determine base branch: HEAD is detached.');
-      out.info('Please specify a base branch with --base-branch <branch>');
-      process.exit(1);
+      fail(errors.detachedHead());
     }
   } else {
     const currentBranch = getCurrentBranch(repoRoot);

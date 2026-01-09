@@ -21,6 +21,7 @@ import {
 } from '../lib/session.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import * as out from '../lib/output.js';
+import { fail, errors } from '../lib/errors.js';
 
 export interface ResumeOptions {
   agent?: string;
@@ -75,51 +76,27 @@ export function isWorktreeValid(worktreePath: string): boolean {
 export async function resume(nameOrId: string, options: ResumeOptions): Promise<void> {
   // Check if we're in a git repo
   if (!isGitRepo()) {
-    out.error('Not a git repository. Run this command from within a git repo.');
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   // Find the main repo root where sessions are stored
   const cwd = process.cwd();
   const mainRepoRoot = findMainRepoRoot(cwd);
   if (!mainRepoRoot) {
-    out.error('Could not find repository root.');
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   // Find the session
   const session = findSession(mainRepoRoot, nameOrId);
   if (!session) {
-    out.error(`Session not found: ${nameOrId}`);
-    out.newline();
-
-    // List available sessions
-    const sessions = listSessions(mainRepoRoot);
-    if (sessions.length === 0) {
-      out.info('No sessions found. Create one with: cry spawn <branch> --new');
-    } else {
-      out.info('Available sessions:');
-      for (const s of sessions.slice(0, 10)) {
-        const exists = isWorktreeValid(s.worktreePath) ? '' : out.fmt.red(' (missing)');
-        out.log(`  • ${out.fmt.branch(s.branch)} ${out.fmt.dim(s.id)}${exists}`);
-      }
-      if (sessions.length > 10) {
-        out.log(`  ${out.fmt.dim(`... and ${sessions.length - 10} more`)}`);
-      }
-    }
-    process.exit(1);
+    fail(errors.sessionNotFound(nameOrId));
   }
 
   const { worktreePath, branch, id } = session;
 
   // Check if worktree still exists
   if (!isWorktreeValid(worktreePath)) {
-    out.error(`Worktree no longer exists: ${worktreePath}`);
-    out.newline();
-    out.info('The worktree may have been removed. Options:');
-    out.log(`  • Recreate: ${out.fmt.cyan(`cry spawn ${branch}`)}`);
-    out.log(`  • Remove stale session: ${out.fmt.cyan(`cry prune`)}`);
-    process.exit(1);
+    fail(errors.worktreeMissing(worktreePath, branch));
   }
 
   // If --cd flag, just print cd command
@@ -138,9 +115,7 @@ export async function resume(nameOrId: string, options: ResumeOptions): Promise<
     out.newline();
 
     if (!commandExists(agentCmd)) {
-      out.error(`Agent command not found: ${agentCmd}`);
-      out.info('Install Claude Code: npm install -g @anthropic-ai/claude-code');
-      process.exit(1);
+      fail(errors.agentNotFound(agentCmd));
     }
 
     out.log(`Launching ${agentCmd}...`);

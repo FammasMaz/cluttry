@@ -162,8 +162,10 @@ describe('cry CLI integration tests', () => {
       const result = await runCli(['spawn', 'dup-branch'], repo.root);
 
       expect(result.exitCode).toBe(1);
-      // Error message mentions to remove it first
-      expect(result.stdout).toContain('Remove it first');
+      // Error message includes structured format with fix commands
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('already exists');
+      expect(output).toContain('Fix:');
     }, TEST_TIMEOUT);
 
     it('fails when destination path already exists', async () => {
@@ -176,8 +178,10 @@ describe('cry CLI integration tests', () => {
       const result = await runCli(['spawn', 'blocked', '--new'], repo.root);
 
       expect(result.exitCode).toBe(1);
-      // Error message mentions to remove or choose different path
-      expect(result.stdout).toContain('Remove it first');
+      // Error message includes structured format with fix commands
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('already exists');
+      expect(output).toContain('Fix:');
     }, TEST_TIMEOUT);
   });
 
@@ -329,8 +333,10 @@ describe('cry CLI integration tests', () => {
       const result = await runCli(['rm', 'does-not-exist'], repo.root);
 
       expect(result.exitCode).toBe(1);
-      // Shows available worktrees when not found
-      expect(result.stdout).toContain('Available worktrees');
+      // Shows structured error with fix commands
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Worktree not found');
+      expect(output).toContain('Fix:');
     }, TEST_TIMEOUT);
   });
 
@@ -422,8 +428,10 @@ describe('cry CLI integration tests', () => {
       const result = await runCli(['open', 'not-here'], repo.root);
 
       expect(result.exitCode).toBe(1);
-      // Shows available worktrees when not found
-      expect(result.stdout).toContain('Available worktrees');
+      // Shows structured error with fix commands
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Worktree not found');
+      expect(output).toContain('Fix:');
     }, TEST_TIMEOUT);
   });
 
@@ -1860,9 +1868,10 @@ describe('cry CLI integration tests', () => {
       const result = await runCli(['resume', 'nonexistent', '--cd'], repo.root);
 
       expect(result.exitCode).toBe(1);
-      // Should list available sessions
-      expect(result.stdout).toContain('feature-one');
-      expect(result.stdout).toContain('feature-two');
+      // Shows structured error with fix commands
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Session not found');
+      expect(output).toContain('Fix:');
     }, TEST_TIMEOUT);
   });
 
@@ -1985,4 +1994,122 @@ describe('cry CLI integration tests', () => {
       expect(sessionsAfter.length).toBe(1);
     }, TEST_TIMEOUT);
   });
-});
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Error message tests - verify structured error output
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('error messages', () => {
+    it('shows structured error for worktree already exists', async () => {
+      repo = createRepo('error-worktree-exists');
+
+      // Initialize and spawn
+      await runCliSuccess(['init'], repo.root);
+      await runCliSuccess(['spawn', 'feature-dup', '--new'], repo.root);
+
+      // Try to spawn again - path check fires first since worktree directory exists
+      const result = await runCli(['spawn', 'feature-dup', '--new'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      // Check structured error format (destination exists check fires first)
+      expect(output).toContain('already exists');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+    }, TEST_TIMEOUT);
+
+    it('shows structured error for destination exists', async () => {
+      repo = createRepo('error-dest-exists');
+
+      // Initialize
+      await runCliSuccess(['init'], repo.root);
+
+      // Create the destination directory manually
+      execSync(`mkdir -p "${repo.root}/.worktrees/feature-blocked"`, { encoding: 'utf-8' });
+
+      // Try to spawn
+      const result = await runCli(['spawn', 'feature-blocked', '--new'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Destination already exists');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+    }, TEST_TIMEOUT);
+
+    it('shows structured error for dirty worktree on rm', async () => {
+      repo = createRepo('error-dirty-rm');
+
+      // Initialize and spawn
+      await runCliSuccess(['init'], repo.root);
+      await runCliSuccess(['spawn', 'feature-dirty', '--new'], repo.root);
+
+      // Create uncommitted changes in worktree
+      createFile(repo.root, '.worktrees/feature-dirty/dirty-file.txt', 'uncommitted');
+
+      // Try to remove
+      const result = await runCli(['rm', 'feature-dirty'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('uncommitted changes');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+      expect(output).toContain('--force');
+    }, TEST_TIMEOUT);
+
+    it('shows structured error for worktree not found', async () => {
+      repo = createRepo('error-wt-notfound');
+
+      // Initialize
+      await runCliSuccess(['init'], repo.root);
+      await runCliSuccess(['spawn', 'feature-exists', '--new'], repo.root);
+
+      // Try to open non-existent worktree
+      const result = await runCli(['open', 'nonexistent-branch'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Worktree not found');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+      expect(output).toContain('cry list');
+    }, TEST_TIMEOUT);
+
+    it('shows structured error for session not found on resume', async () => {
+      repo = createRepo('error-session-notfound');
+
+      // Initialize
+      await runCliSuccess(['init'], repo.root);
+
+      // Try to resume non-existent session
+      const result = await runCli(['resume', 'ghost-session'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('Session not found');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+      expect(output).toContain('cry spawn');
+    }, TEST_TIMEOUT);
+
+    it('shows structured error for missing worktree on resume', async () => {
+      repo = createRepo('error-missing-wt-resume');
+
+      // Initialize and spawn
+      await runCliSuccess(['init'], repo.root);
+      await runCliSuccess(['spawn', 'feature-gone', '--new'], repo.root);
+
+      // Delete the worktree directory
+      execSync(`rm -rf "${repo.root}/.worktrees/feature-gone"`, { encoding: 'utf-8' });
+
+      // Try to resume
+      const result = await runCli(['resume', 'feature-gone'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('no longer exists');
+      expect(output).toContain('Why:');
+      expect(output).toContain('Fix:');
+      expect(output).toContain('cry gc');
+    }, TEST_TIMEOUT);
+  });});

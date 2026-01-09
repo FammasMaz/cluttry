@@ -16,6 +16,7 @@ import {
 } from '../lib/git.js';
 import { resolveBranchOrPath } from '../lib/paths.js';
 import * as out from '../lib/output.js';
+import { fail, errors } from '../lib/errors.js';
 
 interface RmOptions {
   withBranch?: boolean;
@@ -40,8 +41,7 @@ async function confirm(message: string): Promise<boolean> {
 export async function rm(branchOrPath: string, options: RmOptions): Promise<void> {
   // Check if we're in a git repo
   if (!isGitRepo()) {
-    out.error('Not a git repository. Run this command from within a git repo.');
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   const repoRoot = getRepoRoot();
@@ -57,29 +57,21 @@ export async function rm(branchOrPath: string, options: RmOptions): Promise<void
   const resolved = resolveBranchOrPath(branchOrPath, wtList, repoRoot);
 
   if (!resolved) {
-    out.error(`Worktree not found: ${branchOrPath}`);
-    out.info('Available worktrees:');
-    for (const wt of wtList) {
-      out.log(`  • ${wt.branch ?? '(detached)'} → ${wt.path}`);
-    }
-    process.exit(1);
+    const available = wtList.map(w => w.branch ?? w.path);
+    fail(errors.worktreeNotFound(branchOrPath, available));
   }
 
   const { path: wtPath, branch } = resolved;
 
   // Check if it's the main worktree (the original checkout)
   if (wtPath === repoRoot) {
-    out.error('Cannot remove the main worktree.');
-    out.info('This is your primary repository checkout.');
-    process.exit(1);
+    fail(errors.cannotRemoveMainWorktree());
   }
 
   // Check if dirty
   const dirty = isWorktreeDirty(wtPath);
   if (dirty && !options.force) {
-    out.error('Worktree has uncommitted changes.');
-    out.info('Use --force to remove anyway (changes will be lost).');
-    process.exit(1);
+    fail(errors.dirtyWorkingTree(branch ?? branchOrPath));
   }
 
   // Warn and confirm if dirty and force

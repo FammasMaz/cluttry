@@ -27,6 +27,7 @@ import {
   type SessionManifest,
 } from '../lib/session.js';
 import * as out from '../lib/output.js';
+import { fail, errors, printError } from '../lib/errors.js';
 
 export interface FinishOptions {
   json?: boolean;
@@ -761,10 +762,9 @@ export async function finish(options: FinishOptions): Promise<void> {
   if (!isGitRepo(cwd)) {
     if (options.json) {
       console.log(JSON.stringify({ error: 'Not a git repository' }));
-    } else {
-      out.error('Not a git repository. Run this command from within a git repo or worktree.');
+      process.exit(1);
     }
-    process.exit(1);
+    fail(errors.notGitRepo());
   }
 
   // Try to find session manifest first
@@ -779,11 +779,9 @@ export async function finish(options: FinishOptions): Promise<void> {
     if (!detected) {
       if (options.json) {
         console.log(JSON.stringify({ error: 'Could not detect session info' }));
-      } else {
-        out.error('Could not detect session info for current directory.');
-        out.info('Run this command from within a cry worktree, or use cry spawn to create one.');
+        process.exit(1);
       }
-      process.exit(1);
+      fail(errors.sessionNotFound('current directory'));
     }
     session = detected as SessionManifest;
   }
@@ -895,8 +893,7 @@ export async function finish(options: FinishOptions): Promise<void> {
       if (!isBranchPushed(summary.branch, cwd)) {
         out.log(`Pushing branch: ${out.fmt.branch(summary.branch)}`);
         if (!pushToOrigin(summary.branch, cwd)) {
-          out.error('Failed to push branch.');
-          process.exit(1);
+          fail(errors.pushFailed(summary.branch));
         }
         out.success('Branch pushed');
       }
@@ -919,8 +916,7 @@ export async function finish(options: FinishOptions): Promise<void> {
       // Exit 0 as requested - not an error
       process.exit(0);
     } else if (!hasOrigin) {
-      out.warn('No origin remote found. Cannot create PR.');
-      out.info('Add a remote with: git remote add origin <url>');
+      printError(errors.noRemoteConfigured());
     }
   } else {
     out.log(out.fmt.dim('No commits to push.'));
