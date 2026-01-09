@@ -9,6 +9,7 @@ import { existsSync, copyFileSync, symlinkSync, mkdirSync, statSync, readdirSync
 import path from 'node:path';
 import { glob } from 'glob';
 import { isTracked, isIgnored } from './git.js';
+import { validateFileCopy, type FileCopyDecision } from './safety.js';
 import type { SecretMode } from './types.js';
 import * as out from './output.js';
 
@@ -158,6 +159,7 @@ export function createSymlink(
 
 /**
  * Process files according to mode (copy or symlink)
+ * SAFETY: Only processes files that pass safety checks (not tracked, is ignored)
  */
 export async function processSecrets(
   mode: SecretMode,
@@ -173,6 +175,18 @@ export async function processSecrets(
   const processed: string[] = [];
 
   for (const file of safe) {
+    // SAFETY: Validate file copy decision before proceeding
+    const decision: FileCopyDecision = {
+      path: file.path,
+      allowed: file.safe,
+      reason: file.reason ?? 'File is gitignored and not tracked',
+      isTracked: file.isTracked,
+      isIgnored: file.isIgnored,
+    };
+
+    // This will throw if safety constraints are violated
+    validateFileCopy(decision);
+
     try {
       if (mode === 'copy') {
         copyFile(file.path, sourceRoot, targetRoot);
