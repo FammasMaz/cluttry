@@ -13,6 +13,7 @@ import { open } from './commands/open.js';
 import { rm } from './commands/rm.js';
 import { prune } from './commands/prune.js';
 import { doctor } from './commands/doctor.js';
+import { shell } from './commands/shell.js';
 import type { SecretMode } from './lib/types.js';
 
 const program = new Command();
@@ -107,6 +108,15 @@ program
   .description('Check and diagnose cry configuration and setup')
   .action(async () => {
     await doctor();
+  });
+
+// cry shell
+program
+  .command('shell')
+  .description('Output shell integration code for crycd navigation function')
+  .option('-s, --shell <shell>', 'Shell type: bash, zsh, or fish (auto-detected)')
+  .action(async (options) => {
+    await shell({ shell: options.shell });
   });
 
 // Parse and execute
