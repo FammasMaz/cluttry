@@ -72,8 +72,9 @@ program
   .command('open <branch-or-path>')
   .description('Open or navigate to a worktree by branch name or path')
   .option('-c, --cmd <cmd>', 'Command to execute in the worktree directory')
+  .option('-p, --path-only', 'Only print the path (for scripting)')
   .action(async (branchOrPath: string, options) => {
-    await open(branchOrPath, { cmd: options.cmd });
+    await open(branchOrPath, { cmd: options.cmd, pathOnly: options.pathOnly });
   });
 
 // cry rm <branch-or-path>

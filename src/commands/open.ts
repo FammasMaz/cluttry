@@ -15,6 +15,7 @@ import * as out from '../lib/output.js';
 
 interface OpenOptions {
   cmd?: string;
+  pathOnly?: boolean;
 }
 
 export async function open(branchOrPath: string, options: OpenOptions): Promise<void> {
@@ -47,6 +48,12 @@ export async function open(branchOrPath: string, options: OpenOptions): Promise<
 
   const { path: wtPath, branch } = resolved;
 
+  // If --path-only, just print the path (for scripting)
+  if (options.pathOnly) {
+    console.log(wtPath);
+    return;
+  }
+
   // If --cmd is provided, run it
   if (options.cmd) {
     out.log(`Running in ${out.fmt.path(wtPath)}:`);
@@ -65,6 +72,7 @@ export async function open(branchOrPath: string, options: OpenOptions): Promise<
 
   // For shell integration hint
   out.newline();
-  out.log(out.fmt.dim('Tip: Use command substitution in your shell:'));
-  out.log(out.fmt.dim(`  cd "$(cry open ${branchOrPath} 2>/dev/null | grep "^Path:" | cut -d' ' -f2-)"`));
+  out.log(out.fmt.dim('Tip: Add this to your shell profile for easy navigation:'));
+  out.log(out.fmt.dim('  crycd() { cd "$(cry open "$1" --path-only)"; }'));
+  out.log(out.fmt.dim('  # Then use: crycd feature/my-branch'));
 }
