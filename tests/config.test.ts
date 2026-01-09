@@ -4,10 +4,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { mergeConfig } from '../src/lib/config.js';
-import type { VwtConfig, VwtLocalConfig } from '../src/lib/types.js';
+import type { CryConfig, CryLocalConfig } from '../src/lib/types.js';
 
 describe('mergeConfig', () => {
-  const baseConfig: VwtConfig = {
+  const baseConfig: CryConfig = {
     defaultMode: 'copy',
     include: ['.env', '.env.local'],
     hooks: {
@@ -34,7 +34,7 @@ describe('mergeConfig', () => {
   });
 
   it('merges include arrays from both configs', () => {
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       include: ['credentials.json', '.secrets'],
     };
     const result = mergeConfig(baseConfig, localConfig);
@@ -42,7 +42,7 @@ describe('mergeConfig', () => {
   });
 
   it('local worktreeBaseDir overrides base', () => {
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       worktreeBaseDir: '/custom/local/path',
     };
     const result = mergeConfig(baseConfig, localConfig);
@@ -50,7 +50,7 @@ describe('mergeConfig', () => {
   });
 
   it('local agentCommand overrides base', () => {
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       agentCommand: 'cursor',
     };
     const result = mergeConfig(baseConfig, localConfig);
@@ -58,7 +58,7 @@ describe('mergeConfig', () => {
   });
 
   it('merges postCreate hooks from both configs', () => {
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       hooks: {
         postCreate: ['npm run dev', 'code .'],
       },
@@ -68,11 +68,11 @@ describe('mergeConfig', () => {
   });
 
   it('handles empty include arrays', () => {
-    const config: VwtConfig = {
+    const config: CryConfig = {
       defaultMode: 'none',
       include: [],
     };
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       include: [],
     };
     const result = mergeConfig(config, localConfig);
@@ -80,7 +80,7 @@ describe('mergeConfig', () => {
   });
 
   it('handles missing hooks in configs', () => {
-    const config: VwtConfig = {
+    const config: CryConfig = {
       defaultMode: 'symlink',
       include: ['.env'],
     };
@@ -89,11 +89,11 @@ describe('mergeConfig', () => {
   });
 
   it('preserves defaultMode from base config', () => {
-    const config: VwtConfig = {
+    const config: CryConfig = {
       defaultMode: 'symlink',
       include: [],
     };
-    const localConfig: VwtLocalConfig = {
+    const localConfig: CryLocalConfig = {
       include: ['.env'],
     };
     const result = mergeConfig(config, localConfig);

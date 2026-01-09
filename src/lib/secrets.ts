@@ -1,5 +1,5 @@
 /**
- * Secret file handling for VWT
+ * Secret file handling for cry
  *
  * This module ensures that only git-ignored files are ever copied or symlinked.
  * It provides a safety layer to prevent accidentally exposing tracked files.

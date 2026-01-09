@@ -1,16 +1,16 @@
 /**
- * Configuration management for VWT
+ * Configuration management for cry
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { MergedConfig, VwtConfig, VwtLocalConfig } from './types.js';
+import type { MergedConfig, CryConfig, CryLocalConfig } from './types.js';
 
-export const CONFIG_FILE = '.vwt.json';
-export const LOCAL_CONFIG_FILE = '.vwt.local.json';
+export const CONFIG_FILE = '.cry.json';
+export const LOCAL_CONFIG_FILE = '.cry.local.json';
 export const WORKTREE_INCLUDE_FILE = '.worktreeinclude';
 
-const DEFAULT_CONFIG: VwtConfig = {
+const DEFAULT_CONFIG: CryConfig = {
   defaultMode: 'copy',
   include: ['.env', '.env.*', '.env.local'],
   hooks: {
@@ -22,14 +22,14 @@ const DEFAULT_CONFIG: VwtConfig = {
 /**
  * Load the main config file
  */
-export function loadConfig(repoRoot: string): VwtConfig | null {
+export function loadConfig(repoRoot: string): CryConfig | null {
   const configPath = path.join(repoRoot, CONFIG_FILE);
   if (!existsSync(configPath)) {
     return null;
   }
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return JSON.parse(content) as VwtConfig;
+    return JSON.parse(content) as CryConfig;
   } catch (error) {
     throw new Error(`Failed to parse ${CONFIG_FILE}: ${(error as Error).message}`);
   }
@@ -38,14 +38,14 @@ export function loadConfig(repoRoot: string): VwtConfig | null {
 /**
  * Load the local config file
  */
-export function loadLocalConfig(repoRoot: string): VwtLocalConfig | null {
+export function loadLocalConfig(repoRoot: string): CryLocalConfig | null {
   const configPath = path.join(repoRoot, LOCAL_CONFIG_FILE);
   if (!existsSync(configPath)) {
     return null;
   }
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return JSON.parse(content) as VwtLocalConfig;
+    return JSON.parse(content) as CryLocalConfig;
   } catch (error) {
     throw new Error(`Failed to parse ${LOCAL_CONFIG_FILE}: ${(error as Error).message}`);
   }
@@ -54,7 +54,7 @@ export function loadLocalConfig(repoRoot: string): VwtLocalConfig | null {
 /**
  * Merge main config with local overrides
  */
-export function mergeConfig(config: VwtConfig | null, localConfig: VwtLocalConfig | null): MergedConfig {
+export function mergeConfig(config: CryConfig | null, localConfig: CryLocalConfig | null): MergedConfig {
   const base = config ?? DEFAULT_CONFIG;
 
   return {
@@ -83,7 +83,7 @@ export function getMergedConfig(repoRoot: string): MergedConfig {
 /**
  * Save the main config file
  */
-export function saveConfig(repoRoot: string, config: VwtConfig): void {
+export function saveConfig(repoRoot: string, config: CryConfig): void {
   const configPath = path.join(repoRoot, CONFIG_FILE);
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
@@ -91,7 +91,7 @@ export function saveConfig(repoRoot: string, config: VwtConfig): void {
 /**
  * Save the local config file
  */
-export function saveLocalConfig(repoRoot: string, config: VwtLocalConfig): void {
+export function saveLocalConfig(repoRoot: string, config: CryLocalConfig): void {
   const configPath = path.join(repoRoot, LOCAL_CONFIG_FILE);
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
@@ -106,14 +106,14 @@ export function configExists(repoRoot: string): boolean {
 /**
  * Get default config
  */
-export function getDefaultConfig(): VwtConfig {
+export function getDefaultConfig(): CryConfig {
   return { ...DEFAULT_CONFIG };
 }
 
 /**
  * Create default local config
  */
-export function getDefaultLocalConfig(): VwtLocalConfig {
+export function getDefaultLocalConfig(): CryLocalConfig {
   return {
     include: [],
   };

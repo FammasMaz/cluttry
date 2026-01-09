@@ -1,5 +1,5 @@
 /**
- * Git operations for VWT
+ * Git operations for cry
  */
 
 import { execSync, spawn } from 'node:child_process';

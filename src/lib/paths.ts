@@ -1,5 +1,5 @@
 /**
- * Path utilities for VWT
+ * Path utilities for cry
  */
 
 import path from 'node:path';

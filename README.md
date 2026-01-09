@@ -74,8 +74,8 @@ cry init [--force]
 ```
 
 Creates:
-- `.vwt.json` — tracked config with defaults
-- `.vwt.local.json` — gitignored local overrides
+- `.cry.json` — tracked config with defaults
+- `.cry.local.json` — gitignored local overrides
 - Updates `.gitignore` to ignore local config and `.worktrees/`
 
 ### `cry spawn <branch>`
@@ -197,7 +197,7 @@ Checks:
 
 ## Configuration
 
-### `.vwt.json` (tracked)
+### `.cry.json` (tracked)
 
 ```json
 {
@@ -219,7 +219,7 @@ Checks:
 | `hooks.postCreate` | Commands to run after spawning |
 | `agentCommand` | Command to launch AI agent |
 
-### `.vwt.local.json` (gitignored)
+### `.cry.local.json` (gitignored)
 
 Machine-specific overrides:
 
@@ -287,7 +287,7 @@ Files must be explicitly ignored by git (in `.gitignore`) to be eligible for cop
    ```
 
 2. **Configure your secrets:**
-   Edit `.vwt.json` to include your secret files:
+   Edit `.cry.json` to include your secret files:
    ```json
    {
      "include": [".env", ".env.local", "config/oauth*.json"]
@@ -344,8 +344,8 @@ Each agent works in an isolated worktree with its own copy of secrets.
 ├── feature-payments/ # Worktree for feature-payments branch
 └── bugfix-123/       # Worktree for bugfix-123 branch
 
-.vwt.json             # Tracked config
-.vwt.local.json       # Local overrides (gitignored)
+.cry.json             # Tracked config
+.cry.local.json       # Local overrides (gitignored)
 ```
 
 ## Troubleshooting
@@ -390,7 +390,7 @@ Install the AI agent CLI or update `agentCommand` in your config:
 # For Claude
 npm install -g @anthropic-ai/claude-code
 
-# Or override in .vwt.local.json
+# Or override in .cry.local.json
 {
   "agentCommand": "your-agent-command"
 }

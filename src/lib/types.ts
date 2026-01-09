@@ -1,8 +1,8 @@
 /**
- * VWT Configuration Types
+ * Cry Configuration Types
  */
 
-export interface VwtConfig {
+export interface CryConfig {
   /** Base directory for worktrees (optional, defaults to .worktrees/) */
   worktreeBaseDir?: string;
   /** Default mode for secrets handling */
@@ -17,7 +17,7 @@ export interface VwtConfig {
   agentCommand?: string;
 }
 
-export interface VwtLocalConfig {
+export interface CryLocalConfig {
   /** Machine-specific base directory override */
   worktreeBaseDir?: string;
   /** Additional include paths for this machine */

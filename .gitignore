@@ -25,11 +25,11 @@ npm-debug.log*
 .env
 .env.*
 
-# VWT local config (machine-specific)
-.vwt.local.json
+# cry local config (machine-specific)
+.cry.local.json
 
 # Worktrees directory
 .worktrees/
 
-# VWT (Vibe Worktrees)
+# cry
 .worktreeinclude

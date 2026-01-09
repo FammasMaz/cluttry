@@ -66,5 +66,5 @@ export async function open(branchOrPath: string, options: OpenOptions): Promise<
   // For shell integration hint
   out.newline();
   out.log(out.fmt.dim('Tip: Use command substitution in your shell:'));
-  out.log(out.fmt.dim(`  cd "$(vwt open ${branchOrPath} 2>/dev/null | grep "^Path:" | cut -d' ' -f2-)"`));
+  out.log(out.fmt.dim(`  cd "$(cry open ${branchOrPath} 2>/dev/null | grep "^Path:" | cut -d' ' -f2-)"`));
 }

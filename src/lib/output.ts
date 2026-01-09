@@ -1,5 +1,5 @@
 /**
- * Output utilities for VWT
+ * Output utilities for cry
  *
  * Provides consistent, colorful terminal output without external dependencies.
  */
