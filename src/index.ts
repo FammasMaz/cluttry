@@ -136,7 +136,7 @@ Safety notes:
 
 Shell completions:
   cry completions fish > ~/.config/fish/completions/cry.fish`)
-  .version('1.5.0');
+  .version('1.5.1');
 
 // cry init
 program

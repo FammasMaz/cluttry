@@ -144,9 +144,12 @@ export async function open(branchOrPath: string | undefined, options: OpenOption
     }
 
     // Build the command string
+    // Agents (like Claude) use cwd, editors (like VS Code) need path argument
     const fullCommand = cmdInfo.type === 'custom'
       ? cmdInfo.command
-      : `${cmdInfo.command} "${wtPath}"`;
+      : cmdInfo.type === 'agent'
+        ? cmdInfo.command
+        : `${cmdInfo.command} "${wtPath}"`;
 
     out.success(`Opening ${branch ? out.fmt.branch(branch) : '(detached)'} in ${cmdInfo.command}`);
     out.log(`  ${out.fmt.dim('$')} ${fullCommand}`);
