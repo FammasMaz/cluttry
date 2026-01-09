@@ -242,6 +242,44 @@ cry prune
 
 Runs `git worktree prune` and shows what was cleaned.
 
+### `cry resume <nameOrId>`
+
+Resume an existing session by branch name or session ID.
+
+```bash
+cry resume <nameOrId> [options]
+
+Options:
+  -a, --agent <agent>  Launch agent in the session (e.g., claude)
+  --cd                 Print cd command for shell copy/paste
+```
+
+**Examples:**
+
+```bash
+# Resume by branch name (launches configured agent)
+cry resume feature-auth
+
+# Resume by partial branch name
+cry resume auth
+
+# Resume by session ID
+cry resume m5abc123-deadbeef
+
+# Get cd command for shell
+cry resume feature-auth --cd
+# Output: cd "/path/to/.worktrees/feature-auth"
+
+# Resume with specific agent
+cry resume feature-auth --agent claude
+```
+
+**Behavior:**
+- Finds session by exact branch name, partial match, or session ID
+- If agent is configured and available, launches it in the worktree
+- Falls back to showing cd instructions if agent not found
+- Errors gracefully if worktree was removed, suggests recreation
+
 ### `cry finish`
 
 Complete a session: show summary, optionally create a PR, and cleanup. Run this from within a worktree when you're ready to wrap up.

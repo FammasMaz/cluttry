@@ -1754,4 +1754,115 @@ describe('cry CLI integration tests', () => {
       expect(['main', 'master']).toContain(summary.baseBranch);
     }, TEST_TIMEOUT);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tests for cry resume command
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('cry resume', () => {
+    it('resumes session by branch name and resolves correct path', async () => {
+      repo = createRepo('resume-by-branch');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-resume', '--new'], repo.root);
+
+      // Resume by branch name with --cd flag to just get the path
+      const result = await runCliSuccess(['resume', 'feature-resume', '--cd'], repo.root);
+
+      // Should print cd command with correct path
+      expect(result.stdout.trim()).toContain('.worktrees/feature-resume');
+      expect(result.stdout.trim().startsWith('cd "')).toBe(true);
+    }, TEST_TIMEOUT);
+
+    it('resumes session by partial branch name', async () => {
+      repo = createRepo('resume-partial');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree with a longer name
+      await runCliSuccess(['spawn', 'feature-auth-login', '--new'], repo.root);
+
+      // Resume by partial branch name
+      const result = await runCliSuccess(['resume', 'auth-login', '--cd'], repo.root);
+
+      expect(result.stdout.trim()).toContain('feature-auth-login');
+    }, TEST_TIMEOUT);
+
+    it('resumes session by session ID', async () => {
+      repo = createRepo('resume-by-id');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-id-test', '--new'], repo.root);
+
+      // Get the session ID from the manifest
+      const sessions = listSessionFiles(repo.root);
+      expect(sessions.length).toBe(1);
+      const sessionId = sessions[0].replace('.json', '');
+
+      // Resume by session ID
+      const result = await runCliSuccess(['resume', sessionId, '--cd'], repo.root);
+
+      expect(result.stdout.trim()).toContain('feature-id-test');
+    }, TEST_TIMEOUT);
+
+    it('errors gracefully when session not found', async () => {
+      repo = createRepo('resume-not-found');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Try to resume non-existent session
+      const result = await runCli(['resume', 'nonexistent-branch', '--cd'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain('not found');
+    }, TEST_TIMEOUT);
+
+    it('errors gracefully when worktree path is missing', async () => {
+      repo = createRepo('resume-missing-path');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn a worktree
+      await runCliSuccess(['spawn', 'feature-missing', '--new'], repo.root);
+
+      // Manually remove the worktree directory (simulating external removal)
+      const worktreePath = `${repo.root}/.worktrees/feature-missing`;
+      require('fs').rmSync(worktreePath, { recursive: true, force: true });
+
+      // Try to resume - should error about missing worktree
+      const result = await runCli(['resume', 'feature-missing', '--cd'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain('no longer exists');
+    }, TEST_TIMEOUT);
+
+    it('lists available sessions when session not found', async () => {
+      repo = createRepo('resume-list-sessions');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Spawn some worktrees
+      await runCliSuccess(['spawn', 'feature-one', '--new'], repo.root);
+      await runCliSuccess(['spawn', 'feature-two', '--new'], repo.root);
+
+      // Try to resume non-existent session
+      const result = await runCli(['resume', 'nonexistent', '--cd'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      // Should list available sessions
+      expect(result.stdout).toContain('feature-one');
+      expect(result.stdout).toContain('feature-two');
+    }, TEST_TIMEOUT);
+  });
 });

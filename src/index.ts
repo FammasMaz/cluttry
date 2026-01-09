@@ -20,6 +20,7 @@ import { doctor } from './commands/doctor.js';
 import { shell } from './commands/shell.js';
 import { finish } from './commands/finish.js';
 import { explainCopy } from './commands/explain-copy.js';
+import { resume } from './commands/resume.js';
 import type { SecretMode } from './lib/types.js';
 
 // Known subcommands - shorthand parsing must not interfere with these
@@ -34,6 +35,7 @@ const SUBCOMMANDS = new Set([
   'explain-copy',
   'shell',
   'finish',
+  'resume',
   'help',
 ]);
 
@@ -255,6 +257,19 @@ program
       nonInteractive: options.nonInteractive,
       allowDirty: options.allowDirty,
       deleteBranch: options.deleteBranch,
+    });
+  });
+
+// cry resume <nameOrId>
+program
+  .command('resume <nameOrId>')
+  .description('Resume an existing session by branch name or session ID')
+  .option('-a, --agent <agent>', 'Launch agent in the session (e.g., claude)')
+  .option('--cd', 'Print cd command for shell copy/paste')
+  .action(async (nameOrId: string, options) => {
+    await resume(nameOrId, {
+      agent: options.agent,
+      cd: options.cd,
     });
   });
 
