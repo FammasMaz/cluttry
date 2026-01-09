@@ -1,0 +1,12 @@
+{
+  "defaultMode": "copy",
+  "include": [
+    ".env",
+    ".env.*",
+    ".env.local"
+  ],
+  "hooks": {
+    "postCreate": []
+  },
+  "agentCommand": "claude"
+}

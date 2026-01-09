@@ -6,6 +6,7 @@
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { spawn as spawnProcess, ChildProcess } from 'node:child_process';
 import {
   isGitRepo,
   getRepoRoot,
@@ -15,12 +16,15 @@ import {
   listWorktrees,
   runCommand,
   commandExists,
+  getCurrentBranch,
 } from '../lib/git.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import { getDefaultWorktreePath } from '../lib/paths.js';
 import { processSecrets } from '../lib/secrets.js';
+import { createSessionManifest } from '../lib/session.js';
 import * as out from '../lib/output.js';
 import type { SecretMode } from '../lib/types.js';
+import { finish } from './finish.js';
 
 interface SpawnOptions {
   new?: boolean;
@@ -29,6 +33,114 @@ interface SpawnOptions {
   mode?: SecretMode;
   run?: string;
   agent?: string;
+  finishOnExit?: boolean;
+}
+
+/**
+ * Run an agent command and wait for it to exit
+ * Returns the exit code and whether it was interrupted
+ */
+async function runAgentWithExitHandling(
+  command: string,
+  cwd: string
+): Promise<{ exitCode: number; interrupted: boolean }> {
+  return new Promise((resolve) => {
+    const isWindows = process.platform === 'win32';
+    const shell = isWindows ? 'cmd.exe' : '/bin/sh';
+    const shellArgs = isWindows ? ['/c', command] : ['-c', command];
+
+    let interrupted = false;
+
+    const child = spawnProcess(shell, shellArgs, {
+      cwd,
+      stdio: 'inherit',
+      env: process.env,
+    });
+
+    // Handle Ctrl+C gracefully
+    const sigintHandler = () => {
+      interrupted = true;
+      child.kill('SIGINT');
+    };
+
+    const sigtermHandler = () => {
+      interrupted = true;
+      child.kill('SIGTERM');
+    };
+
+    process.on('SIGINT', sigintHandler);
+    process.on('SIGTERM', sigtermHandler);
+
+    child.on('close', (code) => {
+      // Clean up signal handlers
+      process.removeListener('SIGINT', sigintHandler);
+      process.removeListener('SIGTERM', sigtermHandler);
+      resolve({ exitCode: code ?? 1, interrupted });
+    });
+
+    child.on('error', () => {
+      process.removeListener('SIGINT', sigintHandler);
+      process.removeListener('SIGTERM', sigtermHandler);
+      resolve({ exitCode: 1, interrupted });
+    });
+  });
+}
+
+/**
+ * Show post-agent menu and handle user choice
+ */
+async function showPostAgentMenu(
+  worktreePath: string,
+  agentExitCode: number,
+  interrupted: boolean
+): Promise<void> {
+  const readline = await import('node:readline');
+
+  // Change to worktree directory for finish command
+  process.chdir(worktreePath);
+
+  out.newline();
+  out.header('Agent Session Ended');
+
+  if (interrupted) {
+    out.log(out.fmt.yellow('  Agent was interrupted (Ctrl+C)'));
+  } else if (agentExitCode !== 0) {
+    out.log(out.fmt.yellow(`  Agent exited with error (code ${agentExitCode})`));
+  } else {
+    out.log(out.fmt.green('  Agent exited successfully'));
+  }
+
+  out.newline();
+  out.log('What would you like to do?');
+  out.log(`  ${out.fmt.bold('f')}) Finish session (commit, PR, cleanup)`);
+  out.log(`  ${out.fmt.bold('c')}) Cleanup only (remove worktree)`);
+  out.log(`  ${out.fmt.bold('n')}) Do nothing (exit)`);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question('Choice [f/c/n]: ', (ans) => {
+      rl.close();
+      resolve(ans.toLowerCase().trim());
+    });
+  });
+
+  if (answer === 'f' || answer === 'finish') {
+    // Run finish in interactive mode
+    await finish({});
+  } else if (answer === 'c' || answer === 'cleanup') {
+    // Run finish with cleanup only, skip PR
+    await finish({
+      skipCommit: true,
+      cleanup: true,
+    });
+  } else {
+    out.log(out.fmt.dim('Exiting without cleanup.'));
+    out.log(`  ${out.fmt.dim('Run')} cry finish ${out.fmt.dim('later to complete the session.')}`);
+  }
 }
 
 export async function spawn(branch: string, options: SpawnOptions): Promise<void> {
@@ -80,6 +192,9 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   // Determine if we need to create the branch
   const needsNewBranch = options.new || !branchExists(branch, repoRoot);
 
+  // Get the base branch before creating the worktree
+  const baseBranch = getCurrentBranch(repoRoot) ?? 'main';
+
   out.header('Creating worktree');
   out.log(`  Branch: ${out.fmt.branch(branch)}${needsNewBranch ? out.fmt.gray(' (new)') : ''}`);
   out.log(`  Path:   ${out.fmt.path(worktreePath)}`);
@@ -93,6 +208,22 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   } catch (error) {
     out.error(`Failed to create worktree: ${(error as Error).message}`);
     process.exit(1);
+  }
+
+  // Create session manifest
+  const agentChoice = options.agent ?? 'none';
+  try {
+    const session = createSessionManifest({
+      repoRoot,
+      branch,
+      baseBranch,
+      worktreePath,
+      agent: agentChoice !== 'none' ? agentChoice : undefined,
+    });
+    out.success(`Session created: ${out.fmt.dim(session.id)}`);
+  } catch (error) {
+    // Non-fatal: session manifest is helpful but not required
+    out.warn(`Could not create session manifest: ${(error as Error).message}`);
   }
 
   // Handle secrets
@@ -148,22 +279,34 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   }
 
   // Handle agent launch
-  const agentChoice = options.agent ?? 'none';
-  if (agentChoice === 'claude') {
-    const agentCmd = config.agentCommand;
+  if (agentChoice === 'claude' || agentChoice === 'cursor') {
+    // Determine the actual command to run
+    // For 'claude', use config.agentCommand (defaults to 'claude')
+    // For 'cursor', use 'cursor' command
+    const agentCmd = agentChoice === 'cursor' ? 'cursor' : config.agentCommand;
     out.newline();
 
     if (commandExists(agentCmd)) {
       out.log(`Launching ${agentCmd}...`);
-      await runCommand(agentCmd, worktreePath);
+
+      if (options.finishOnExit) {
+        // Use special handler that waits for exit and shows menu
+        const { exitCode, interrupted } = await runAgentWithExitHandling(agentCmd, worktreePath);
+        await showPostAgentMenu(worktreePath, exitCode, interrupted);
+      } else {
+        // Just run the command normally
+        await runCommand(agentCmd, worktreePath);
+      }
     } else {
       out.warn(`Agent command '${agentCmd}' not found.`);
       out.info('Install Claude Code: https://docs.anthropic.com/claude-code');
     }
   }
 
-  // Final summary
-  out.newline();
-  out.header('Worktree ready');
-  out.log(`  ${out.fmt.dim('cd')} ${worktreePath}`);
+  // Final summary (only if not using finish-on-exit, since finish handles its own output)
+  if (!options.finishOnExit || agentChoice === 'none') {
+    out.newline();
+    out.header('Worktree ready');
+    out.log(`  ${out.fmt.dim('cd')} ${worktreePath}`);
+  }
 }

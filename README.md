@@ -53,14 +53,47 @@ npm link
 cd your-repo
 cry init
 
-# Spawn a new worktree for a feature branch
-cry spawn feature-auth --new
+# Spawn a new worktree (shorthand)
+cry feature-auth
+
+# Or spawn with an AI agent
+cry feature-auth claude
 
 # List all worktrees
 cry list
 
 # Remove a worktree when done
 cry rm feature-auth --with-branch
+```
+
+## Shorthand Syntax
+
+The fastest way to start a new session:
+
+```bash
+# Create worktree for new branch
+cry <branch-name>
+
+# Create worktree and launch Claude
+cry <branch-name> claude
+
+# Create worktree and launch Cursor
+cry <branch-name> cursor
+```
+
+**Examples:**
+
+```bash
+cry feat-oauth              # Creates .worktrees/feat-oauth
+cry fix/login-bug           # Creates .worktrees/fix-login-bug
+cry feat-api claude         # Creates worktree + launches Claude
+cry refactor cursor         # Creates worktree + launches Cursor
+```
+
+The shorthand is equivalent to:
+```bash
+cry feat-auth         →  cry spawn feat-auth --new
+cry feat-auth claude  →  cry spawn feat-auth --new --agent claude
 ```
 
 ## Commands
@@ -76,7 +109,7 @@ cry init [--force]
 Creates:
 - `.cry.json` — tracked config with defaults
 - `.cry.local.json` — gitignored local overrides
-- Updates `.gitignore` to ignore local config and `.worktrees/`
+- Updates `.gitignore` to ignore local config, `.worktrees/`, and `.cry/`
 
 ### `cry spawn <branch>`
 
@@ -92,6 +125,7 @@ Options:
   -m, --mode <mode>    Secret handling: copy, symlink, or none (default: copy)
   -r, --run <cmd>      Command to run after creation
   -a, --agent <agent>  Launch agent: claude or none (default: none)
+  --finish-on-exit     After agent exits, show finish menu (commit, PR, cleanup)
 ```
 
 **Examples:**
@@ -111,6 +145,9 @@ cry spawn bugfix-123 --mode symlink
 
 # Custom worktree location
 cry spawn hotfix --path ~/worktrees/myrepo-hotfix
+
+# Full lifecycle: spawn, work with agent, then finish
+cry spawn feat-login --new --agent claude --finish-on-exit
 ```
 
 ### `cry list`
@@ -179,6 +216,92 @@ cry prune
 ```
 
 Runs `git worktree prune` and shows what was cleaned.
+
+### `cry finish`
+
+Complete a session: show summary, optionally create a PR, and cleanup. Run this from within a worktree when you're ready to wrap up.
+
+```bash
+cry finish [options]
+
+Options:
+  -j, --json           Output summary as JSON (no actions taken)
+  -m, --message <msg>  Commit message (stages all, commits non-interactively)
+  --skip-commit        Skip commit step entirely (still safe)
+  --dry-run            Show what would happen without executing
+  --pr                 Force PR creation path
+  --cleanup            Auto-cleanup after PR (skip prompt)
+  --skip-cleanup       Skip cleanup prompt entirely
+  --non-interactive    Never prompt; errors on dirty unless --allow-dirty
+  --allow-dirty        Allow proceeding with uncommitted changes
+  --delete-branch      Delete branch during cleanup (with --cleanup)
+```
+
+**Default interactive flow:**
+1. Shows session summary (branch, commits, diff stats)
+2. If working tree is dirty, offers choices: view diff, commit changes, or abort
+3. **Commit wizard** (when committing):
+   - Shows staged vs unstaged files
+   - Offers: stage all + commit, commit only staged, or abort
+   - Suggests commit message based on branch name (e.g., `feat-login` → "Login")
+4. If clean with commits, creates PR via `gh` (if available) or shows manual instructions
+5. Offers cleanup prompt: remove worktree and optionally delete branch
+
+**Examples:**
+
+```bash
+# Interactive flow (default)
+cry finish
+
+# Commit with provided message (non-interactive commit)
+cry finish --message "Add user authentication"
+
+# Skip commit step, just create PR from existing commits
+cry finish --skip-commit
+
+# Non-interactive with auto-cleanup
+cry finish --non-interactive --cleanup
+
+# Preview what would happen
+cry finish --dry-run
+
+# Output summary as JSON (for scripting)
+cry finish --json
+
+# Force proceed with uncommitted changes
+cry finish --non-interactive --allow-dirty --skip-cleanup
+```
+
+**Sample output:**
+```
+Session Summary
+
+  Branch:      feature-auth
+  Base:        main
+  Worktree:    /repo/.worktrees/feature-auth
+  Session ID:  m5abc123-deadbeef
+
+Working Tree Status:
+  ✓ Clean
+
+Changes vs main:
+  3 files changed, 45 insertions(+), 12 deletions(-)
+
+Commits:
+  ↑ 2 ahead of main
+    abc1234 Add authentication middleware
+    def5678 Add login form component
+
+Creating pull request...
+✓ PR created: https://github.com/owner/repo/pull/42
+
+Remove worktree and clean up? [y/N]
+```
+
+**Safety guarantees:**
+- Never auto-merges PRs
+- Never deletes anything without confirmation (or explicit `--cleanup`)
+- Exits with code 0 when printing manual instructions (not an error)
 
 ### `cry doctor`
 
@@ -279,7 +402,54 @@ Files must be explicitly ignored by git (in `.gitignore`) to be eligible for cop
 
 ## Using with AI Agents
 
-### Recommended Pattern
+### Full Lifecycle (Recommended)
+
+The `--finish-on-exit` flag provides a complete session lifecycle in one command:
+
+```bash
+cry feat-login claude --finish-on-exit
+```
+
+This command:
+1. Creates a new worktree for branch `feat-login`
+2. Copies secrets to the worktree
+3. Launches Claude Code in the worktree
+4. **When Claude exits**, shows a menu:
+   - **f) Finish session** — commit changes, create PR, cleanup
+   - **c) Cleanup only** — remove worktree without PR
+   - **n) Do nothing** — exit, finish later with `cry finish`
+
+**Sample session:**
+```
+$ cry feat-login claude --finish-on-exit
+
+Creating worktree
+  Branch: feat-login (new)
+  Path:   /repo/.worktrees/feat-login
+  Mode:   copy
+
+✓ Worktree created
+✓ Session created: m5abc123-deadbeef
+
+Launching claude...
+
+# ... Claude Code session runs here ...
+
+Agent Session Ended
+  Agent exited successfully
+
+What would you like to do?
+  f) Finish session (commit, PR, cleanup)
+  c) Cleanup only (remove worktree)
+  n) Do nothing (exit)
+Choice [f/c/n]: f
+
+# ... finish flow runs (commit wizard, PR creation, cleanup) ...
+```
+
+### Manual Pattern
+
+If you prefer more control, use separate commands:
 
 1. **Initialize once per repo:**
    ```bash
@@ -301,7 +471,12 @@ Files must be explicitly ignored by git (in `.gitignore`) to be eligible for cop
 
 4. **Work with your AI agent in the worktree**
 
-5. **Clean up when done:**
+5. **Finish the session:**
+   ```bash
+   cry finish
+   ```
+
+6. **Or clean up manually:**
    ```bash
    cry rm fix-auth-bug --with-branch
    ```
@@ -405,12 +580,32 @@ npm install
 # Build
 npm run build
 
-# Run tests
+# Run all tests (unit + integration)
 npm test
 
-# Watch mode
+# Run tests in watch mode
+npm run test:watch
+
+# Run a specific test file
+npx vitest run tests/paths.test.ts
+
+# Run tests matching a pattern
+npx vitest run -t "sanitizeBranchName"
+
+# Run with coverage
+npm run test:coverage
+
+# TypeScript watch mode
 npm run dev
 ```
+
+### Test Structure
+
+- `tests/*.test.ts` — Unit tests (mocked, fast)
+- `tests/integration.test.ts` — Integration tests (real git repos, ~5s)
+- `tests/helpers/integration.ts` — Test utilities for creating repos, running CLI
+
+Integration tests create temporary git repositories, run the actual CLI binary, and verify behavior end-to-end. They are deterministic and require no network access.
 
 ## Tech Stack
 

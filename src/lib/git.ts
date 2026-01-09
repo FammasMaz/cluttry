@@ -2,23 +2,28 @@
  * Git operations for cry
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { WorktreeInfo } from './types.js';
 
 /**
  * Execute a git command and return stdout
+ * Uses spawnSync to properly handle arguments with spaces
  */
 export function git(args: string[], cwd?: string): string {
-  const options = cwd ? { cwd, encoding: 'utf-8' as const } : { encoding: 'utf-8' as const };
-  try {
-    return execSync(`git ${args.join(' ')}`, { ...options, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch (error: unknown) {
-    const execError = error as { stderr?: Buffer; message?: string };
-    const stderr = execError.stderr?.toString?.() || execError.message || 'Unknown git error';
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString?.() || result.error?.message || 'Unknown git error';
     throw new Error(stderr.trim());
   }
+
+  return (result.stdout || '').trim();
 }
 
 /**
@@ -233,8 +238,10 @@ export function runCommand(command: string, cwd: string): Promise<number> {
  */
 export function commandExists(cmd: string): boolean {
   try {
+    // Extract just the command name (first word) from a potentially complex command
+    const cmdName = cmd.split(/\s+/)[0];
     const isWindows = process.platform === 'win32';
-    const checkCmd = isWindows ? `where ${cmd}` : `which ${cmd}`;
+    const checkCmd = isWindows ? `where ${cmdName}` : `which ${cmdName}`;
     execSync(checkCmd, { stdio: 'pipe' });
     return true;
   } catch {

@@ -91,6 +91,7 @@ export async function init(options: InitOptions): Promise<void> {
     LOCAL_CONFIG_FILE,
     '.worktrees/',
     '.worktreeinclude',
+    '.cry/',
   ];
 
   const addedEntries = ensureGitignoreEntries(repoRoot, gitignoreEntries);
