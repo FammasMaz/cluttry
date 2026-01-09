@@ -46,6 +46,33 @@ npm link
 
 **Requirements:** Bun 1.0+ or Node.js 18+, Git 2.5+
 
+### Shell Completions
+
+Enable tab completion for faster CLI usage:
+
+**Fish** (recommended):
+```bash
+cry completions fish > ~/.config/fish/completions/cry.fish
+```
+
+**Bash**:
+```bash
+# Add to ~/.bashrc
+cry completions bash >> ~/.bashrc
+
+# Or install system-wide
+cry completions bash | sudo tee /etc/bash_completion.d/cry
+```
+
+**Zsh**:
+```bash
+mkdir -p ~/.zsh/completions
+cry completions zsh > ~/.zsh/completions/_cry
+# Add to ~/.zshrc:
+# fpath=(~/.zsh/completions $fpath)
+# autoload -Uz compinit && compinit
+```
+
 ## Quick Start
 
 ```bash

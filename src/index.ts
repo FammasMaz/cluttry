@@ -22,6 +22,7 @@ import { finish } from './commands/finish.js';
 import { explainCopy } from './commands/explain-copy.js';
 import { resume } from './commands/resume.js';
 import { gc } from './commands/gc.js';
+import { completions } from './commands/completions.js';
 import type { SecretMode } from './lib/types.js';
 
 // Known subcommands - shorthand parsing must not interfere with these
@@ -38,6 +39,7 @@ const SUBCOMMANDS = new Set([
   'finish',
   'resume',
   'gc',
+  'completions',
   'help',
 ]);
 
@@ -108,11 +110,32 @@ Shorthand syntax:
   cry <name>           Create worktree for new branch <name>
   cry <name> claude    Create worktree and launch Claude agent
 
-Examples:
-  cry feat-auth              # spawn new branch 'feat-auth'
-  cry feat-auth claude       # spawn and launch Claude
-  cry spawn feat-auth        # explicit spawn command
-  cry list                   # list all worktrees`)
+Quick start:
+  cry init                     # Initialize in repo
+  cry feat-auth                # Create worktree for new branch
+  cry feat-auth claude         # Create and launch Claude agent
+
+Workflow examples:
+  cry spawn feat-auth --new    # Explicit: create new branch worktree
+  cry list                     # List all worktrees
+  cry open feat-auth           # Open worktree in agent/editor
+  cry resume feat-auth         # Resume session by name
+  cry finish                   # Commit, push, create PR, cleanup
+  cry rm feat-auth             # Remove worktree
+
+Finish flow (run from worktree):
+  cry finish                   # Interactive: commit → PR → cleanup
+  cry finish --dry-run         # Preview what would happen
+  cry finish -m "Add auth"     # Commit with message, create PR
+  cry finish --cleanup         # Auto-cleanup after PR
+
+Safety notes:
+  • Never auto-merges PRs
+  • Never deletes without confirmation (unless --yes)
+  • Only copies gitignored files to worktrees (secrets safety)
+
+Shell completions:
+  cry completions fish > ~/.config/fish/completions/cry.fish`)
   .version('1.0.3');
 
 // cry init
@@ -287,6 +310,17 @@ program
       dryRun: options.dryRun,
       yes: options.yes,
       manifestsOnly: options.manifestsOnly,
+    });
+  });
+
+// cry completions [shell]
+program
+  .command('completions [shell]')
+  .description('Generate shell completions (bash, zsh, fish)')
+  .option('-s, --shell <shell>', 'Shell type (bash, zsh, fish)')
+  .action(async (shell: string | undefined, options) => {
+    await completions(shell, {
+      shell: options.shell,
     });
   });
 
