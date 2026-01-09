@@ -19,6 +19,7 @@ import { prune } from './commands/prune.js';
 import { doctor } from './commands/doctor.js';
 import { shell } from './commands/shell.js';
 import { finish } from './commands/finish.js';
+import { explainCopy } from './commands/explain-copy.js';
 import type { SecretMode } from './lib/types.js';
 
 // Known subcommands - shorthand parsing must not interfere with these
@@ -30,6 +31,7 @@ const SUBCOMMANDS = new Set([
   'rm', 'remove',
   'prune',
   'doctor',
+  'explain-copy',
   'shell',
   'finish',
   'help',
@@ -129,6 +131,7 @@ program
   .option('-r, --run <cmd>', 'Command to run after creating worktree')
   .option('-a, --agent <agent>', 'Launch agent after setup: claude or none', 'none')
   .option('--finish-on-exit', 'After agent exits, show finish menu (commit, PR, cleanup)')
+  .option('--dry-run', 'Show what would happen without creating the worktree')
   .action(async (branch: string, options) => {
     const mode = options.mode as SecretMode;
     if (!['copy', 'symlink', 'none'].includes(mode)) {
@@ -143,6 +146,7 @@ program
       run: options.run,
       agent: options.agent,
       finishOnExit: options.finishOnExit,
+      dryRun: options.dryRun,
     });
   });
 
@@ -196,6 +200,15 @@ program
   .description('Check and diagnose cry configuration and setup')
   .action(async () => {
     await doctor();
+  });
+
+// cry explain-copy
+program
+  .command('explain-copy')
+  .description('Explain which files will be copied/symlinked and which are blocked')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (options) => {
+    await explainCopy({ json: options.json });
   });
 
 // cry shell

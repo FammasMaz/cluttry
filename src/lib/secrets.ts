@@ -10,6 +10,7 @@ import path from 'node:path';
 import { glob } from 'glob';
 import { isTracked, isIgnored } from './git.js';
 import type { SecretMode } from './types.js';
+import * as out from './output.js';
 
 export interface FileCheckResult {
   path: string;
@@ -190,4 +191,137 @@ export async function processSecrets(
   }
 
   return { processed, skipped: unsafe };
+}
+
+/**
+ * Copy plan for explain-copy and spawn --dry-run
+ */
+export interface CopyPlan {
+  /** Files that will be copied/symlinked */
+  willCopy: Array<{
+    path: string;
+    reason: string;
+  }>;
+  /** Files that are blocked from copying */
+  blocked: Array<{
+    path: string;
+    reason: string;
+    type: 'tracked' | 'not_ignored' | 'not_found';
+  }>;
+  /** Warnings about include patterns */
+  warnings: string[];
+  /** Patterns from config */
+  patterns: string[];
+}
+
+/**
+ * Generate a copy plan explaining what will/won't be copied
+ */
+export async function generateCopyPlan(
+  patterns: string[],
+  repoRoot: string
+): Promise<CopyPlan> {
+  const plan: CopyPlan = {
+    willCopy: [],
+    blocked: [],
+    warnings: [],
+    patterns,
+  };
+
+  if (patterns.length === 0) {
+    return plan;
+  }
+
+  // Expand patterns and check each file
+  const files = await expandIncludePatterns(patterns, repoRoot);
+
+  for (const file of files) {
+    const result = checkFileSafety(file, repoRoot);
+
+    if (result.safe) {
+      plan.willCopy.push({
+        path: result.path,
+        reason: 'gitignored and exists',
+      });
+    } else if (!result.exists) {
+      // Don't report non-existent files as blocked (pattern just didn't match anything real)
+      continue;
+    } else if (result.isTracked) {
+      plan.blocked.push({
+        path: result.path,
+        reason: result.reason || 'File is tracked by git',
+        type: 'tracked',
+      });
+      plan.warnings.push(
+        `Pattern matches tracked file: ${result.path} — tracked files are NEVER copied`
+      );
+    } else if (!result.isIgnored) {
+      plan.blocked.push({
+        path: result.path,
+        reason: result.reason || 'File is not in .gitignore',
+        type: 'not_ignored',
+      });
+    } else {
+      plan.blocked.push({
+        path: result.path,
+        reason: result.reason || 'Unknown safety issue',
+        type: 'not_found',
+      });
+    }
+  }
+
+  return plan;
+}
+
+/**
+ * Format a copy plan for human-readable output
+ */
+export function formatCopyPlan(plan: CopyPlan, mode: SecretMode): string {
+  const lines: string[] = [];
+
+  // Patterns
+  lines.push(out.fmt.bold('Include patterns:'));
+  if (plan.patterns.length === 0) {
+    lines.push('  (none configured)');
+  } else {
+    for (const pattern of plan.patterns) {
+      lines.push(`  ${out.fmt.dim('•')} ${pattern}`);
+    }
+  }
+  lines.push('');
+
+  // Warnings (if any)
+  if (plan.warnings.length > 0) {
+    lines.push(out.fmt.yellow(out.fmt.bold('⚠ Warnings:')));
+    for (const warning of plan.warnings) {
+      lines.push(`  ${out.fmt.yellow('•')} ${warning}`);
+    }
+    lines.push('');
+  }
+
+  // Files that will be copied
+  lines.push(out.fmt.green(out.fmt.bold(`✓ Will ${mode === 'symlink' ? 'symlink' : 'copy'} (${plan.willCopy.length} file${plan.willCopy.length !== 1 ? 's' : ''}):`)));
+  if (plan.willCopy.length === 0) {
+    lines.push(`  ${out.fmt.dim('(no files matched)')}`);
+  } else {
+    for (const file of plan.willCopy) {
+      lines.push(`  ${out.fmt.green('•')} ${file.path}`);
+      lines.push(`      ${out.fmt.dim(file.reason)}`);
+    }
+  }
+  lines.push('');
+
+  // Files that are blocked
+  lines.push(out.fmt.red(out.fmt.bold(`✗ Blocked (${plan.blocked.length} file${plan.blocked.length !== 1 ? 's' : ''}):`)));
+  if (plan.blocked.length === 0) {
+    lines.push(`  ${out.fmt.dim('(none)')}`);
+  } else {
+    for (const file of plan.blocked) {
+      const icon = file.type === 'tracked' ? '🔒' : file.type === 'not_ignored' ? '⚠' : '?';
+      lines.push(`  ${out.fmt.red('•')} ${icon} ${file.path}`);
+      lines.push(`      ${out.fmt.dim(file.reason)}`);
+    }
+  }
+
+  return lines.join('\n');
 }

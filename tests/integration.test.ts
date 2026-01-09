@@ -1229,4 +1229,332 @@ describe('cry CLI integration tests', () => {
       expect(result.stdout).toContain('Worktree ready');
     }, TEST_TIMEOUT);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tests for explain-copy command
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('cry explain-copy', () => {
+    it('shows files that will be copied (gitignored + in include)', async () => {
+      repo = createRepo('explain-copy-safe');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create a gitignored .env file
+      addToGitignore(repo.root, '.env');
+      createFile(repo.root, '.env', 'SECRET=value');
+
+      // Run explain-copy
+      const result = await runCliSuccess(['explain-copy'], repo.root);
+
+      expect(result.stdout).toContain('Copy Plan');
+      expect(result.stdout).toContain('.env');
+      expect(result.stdout).toContain('Will copy');
+      expect(result.stdout).toContain('gitignored');
+    }, TEST_TIMEOUT);
+
+    it('shows tracked files as blocked', async () => {
+      repo = createRepo('explain-copy-tracked');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Modify config to include README.md (which is tracked)
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['README.md'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Run explain-copy
+      const result = await runCliSuccess(['explain-copy'], repo.root);
+
+      expect(result.stdout).toContain('Blocked');
+      expect(result.stdout).toContain('README.md');
+      expect(result.stdout).toContain('tracked');
+    }, TEST_TIMEOUT);
+
+    it('warns when include patterns match tracked files', async () => {
+      repo = createRepo('explain-copy-warning');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Modify config to include tracked file
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['README.md'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Run explain-copy
+      const result = await runCliSuccess(['explain-copy'], repo.root);
+
+      expect(result.stdout).toContain('Warnings');
+      expect(result.stdout).toContain('tracked files are NEVER copied');
+    }, TEST_TIMEOUT);
+
+    it('shows files not in gitignore as blocked', async () => {
+      repo = createRepo('explain-copy-not-ignored');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create a file that's NOT gitignored and NOT tracked
+      createFile(repo.root, 'secrets.txt', 'SECRET=value');
+
+      // Modify config to include this file
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['secrets.txt'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Run explain-copy
+      const result = await runCliSuccess(['explain-copy'], repo.root);
+
+      expect(result.stdout).toContain('Blocked');
+      expect(result.stdout).toContain('secrets.txt');
+      expect(result.stdout).toContain('not ignored');
+    }, TEST_TIMEOUT);
+
+    it('outputs JSON format', async () => {
+      repo = createRepo('explain-copy-json');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create a gitignored .env file
+      addToGitignore(repo.root, '.env');
+      createFile(repo.root, '.env', 'SECRET=value');
+
+      // Run explain-copy with --json
+      const result = await runCliSuccess(['explain-copy', '--json'], repo.root);
+
+      // Parse JSON
+      const plan = JSON.parse(result.stdout);
+      expect(plan.patterns).toBeDefined();
+      expect(plan.willCopy).toBeDefined();
+      expect(plan.blocked).toBeDefined();
+      expect(plan.warnings).toBeDefined();
+
+      // Check .env is in willCopy
+      expect(plan.willCopy.some((f: any) => f.path === '.env')).toBe(true);
+    }, TEST_TIMEOUT);
+
+    it('fails when no config exists', async () => {
+      repo = createRepo('explain-copy-noconfig');
+
+      // Run explain-copy without init
+      const result = await runCli(['explain-copy'], repo.root);
+
+      expect(result.exitCode).toBe(1);
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain('.cry.json');
+    }, TEST_TIMEOUT);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tests for spawn --dry-run with copy plan
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('cry spawn --dry-run', () => {
+    it('shows copy plan without creating worktree', async () => {
+      repo = createRepo('spawn-dryrun-plan');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create a gitignored .env file
+      addToGitignore(repo.root, '.env');
+      createFile(repo.root, '.env', 'SECRET=value');
+
+      // Run spawn with --dry-run
+      const result = await runCliSuccess(
+        ['spawn', 'feature-test', '--new', '--dry-run'],
+        repo.root
+      );
+
+      // Should show dry run output
+      expect(result.stdout).toContain('Dry Run');
+      expect(result.stdout).toContain('Copy Plan');
+      expect(result.stdout).toContain('.env');
+      expect(result.stdout).toContain('No changes were made');
+
+      // Should NOT have created the worktree
+      expect(exists(repo.root, '.worktrees/feature-test')).toBe(false);
+    }, TEST_TIMEOUT);
+
+    it('shows mode none message when mode is none', async () => {
+      repo = createRepo('spawn-dryrun-none');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Run spawn with --dry-run --mode none
+      const result = await runCliSuccess(
+        ['spawn', 'feature-test', '--new', '--dry-run', '--mode', 'none'],
+        repo.root
+      );
+
+      // Should show mode none message
+      expect(result.stdout).toContain('none');
+      expect(result.stdout).toContain('no files will be copied');
+    }, TEST_TIMEOUT);
+
+    it('shows blocked files in dry-run output', async () => {
+      repo = createRepo('spawn-dryrun-blocked');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Modify config to include tracked file
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['README.md', '.env'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Create a gitignored .env file (this one should be safe)
+      addToGitignore(repo.root, '.env');
+      createFile(repo.root, '.env', 'SECRET=value');
+
+      // Run spawn with --dry-run
+      const result = await runCliSuccess(
+        ['spawn', 'feature-test', '--new', '--dry-run'],
+        repo.root
+      );
+
+      // Should show both safe and blocked files
+      expect(result.stdout).toContain('Will copy');
+      expect(result.stdout).toContain('.env');
+      expect(result.stdout).toContain('Blocked');
+      expect(result.stdout).toContain('README.md');
+    }, TEST_TIMEOUT);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Security model tests
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('security model', () => {
+    it('tracked files are never copied even if in include list', async () => {
+      repo = createRepo('security-tracked');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Modify config to include README.md (tracked)
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['README.md'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Spawn a worktree
+      const result = await runCliSuccess(['spawn', 'security-test', '--new'], repo.root);
+
+      // README.md exists in worktree (because it's part of repo), but should be skipped
+      // Check output mentions skipping
+      expect(result.stdout).toContain('Skipped') || expect(result.stdout).toContain('Processing secrets');
+    }, TEST_TIMEOUT);
+
+    it('ignored files in include list are copied successfully', async () => {
+      repo = createRepo('security-ignored');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create gitignored files
+      addToGitignore(repo.root, '.env');
+      addToGitignore(repo.root, '*.secret');
+      createFile(repo.root, '.env', 'API_KEY=secret123');
+      createFile(repo.root, 'config.secret', 'password=hidden');
+
+      // Modify config
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['.env', '*.secret'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Spawn a worktree
+      const result = await runCliSuccess(['spawn', 'security-safe', '--new'], repo.root);
+
+      expect(result.stdout).toContain('Copied');
+
+      // Verify files were copied
+      expect(exists(repo.root, '.worktrees/security-safe/.env')).toBe(true);
+      expect(readFile(repo.root, '.worktrees/security-safe/.env')).toBe('API_KEY=secret123');
+      expect(exists(repo.root, '.worktrees/security-safe/config.secret')).toBe(true);
+    }, TEST_TIMEOUT);
+
+    it('files not in gitignore are blocked', async () => {
+      repo = createRepo('security-not-ignored');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create a file that's NOT gitignored
+      createFile(repo.root, 'not-ignored.txt', 'secret');
+
+      // Modify config to try to include it
+      const configContent = {
+        defaultMode: 'copy',
+        include: ['not-ignored.txt'],
+        worktreeBaseDir: null,
+        hooks: { postCreate: [] },
+        agentCommand: 'claude',
+      };
+      createFile(repo.root, '.cry.json', JSON.stringify(configContent, null, 2));
+
+      // Spawn a worktree
+      const result = await runCliSuccess(['spawn', 'security-blocked', '--new'], repo.root);
+
+      // Should show skipped
+      expect(result.stdout).toContain('Skipped');
+      expect(result.stdout).toContain('not ignored');
+    }, TEST_TIMEOUT);
+
+    it('symlink mode works for ignored files', async () => {
+      repo = createRepo('security-symlink');
+
+      // Initialize cry
+      await runCliSuccess(['init'], repo.root);
+
+      // Create gitignored file
+      addToGitignore(repo.root, '.env');
+      createFile(repo.root, '.env', 'SYMLINK_TEST=true');
+
+      // Spawn with symlink mode
+      const result = await runCliSuccess(
+        ['spawn', 'symlink-test', '--new', '--mode', 'symlink'],
+        repo.root
+      );
+
+      expect(result.stdout).toContain('Symlinked');
+
+      // Verify symlink was created
+      const { lstatSync } = require('fs');
+      const symlinkPath = `${repo.root}/.worktrees/symlink-test/.env`;
+      expect(exists(repo.root, '.worktrees/symlink-test/.env')).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
+    }, TEST_TIMEOUT);
+  });
 });

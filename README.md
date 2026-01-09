@@ -126,6 +126,7 @@ Options:
   -r, --run <cmd>      Command to run after creation
   -a, --agent <agent>  Launch agent: claude or none (default: none)
   --finish-on-exit     After agent exits, show finish menu (commit, PR, cleanup)
+  --dry-run            Show what would happen without creating the worktree
 ```
 
 **Examples:**
@@ -148,6 +149,9 @@ cry spawn hotfix --path ~/worktrees/myrepo-hotfix
 
 # Full lifecycle: spawn, work with agent, then finish
 cry spawn feat-login --new --agent claude --finish-on-exit
+
+# Preview what files will be copied (dry run)
+cry spawn feature-test --new --dry-run
 ```
 
 ### `cry list`
@@ -318,6 +322,44 @@ Checks:
 - Include files are safely gitignored
 - Agent command is available
 
+### `cry explain-copy`
+
+Explain which files will be copied/symlinked and which are blocked. This helps you understand the security model before spawning.
+
+```bash
+cry explain-copy [--json]
+```
+
+**Output shows:**
+- **Will copy**: Files that are gitignored and match include patterns (safe to copy)
+- **Blocked**: Files that are tracked or not ignored (refused for safety)
+- **Warnings**: If include patterns match tracked files
+
+**Example output:**
+
+```
+Copy Plan
+
+Include patterns:
+  • .env
+  • .env.*
+
+✓ Will copy (2 files):
+  • .env
+      gitignored and exists
+  • .env.local
+      gitignored and exists
+
+⚠ Warnings:
+  • Pattern matches tracked file: README.md — tracked files are NEVER copied
+
+✗ Blocked (1 file):
+  • 🔒 README.md
+      File is tracked by git (would be committed)
+```
+
+This is equivalent to what `cry spawn --dry-run` shows for the copy plan.
+
 ## Configuration
 
 ### `.cry.json` (tracked)
@@ -399,6 +441,39 @@ Files must be explicitly ignored by git (in `.gitignore`) to be eligible for cop
 | `none` | No secrets copied | Must set up secrets manually |
 
 **Recommendation:** Use `copy` (default) for most cases. Use `symlink` if you frequently update secrets and want all worktrees to stay in sync.
+
+### Debugging the Security Model
+
+Use these commands to understand what files will or won't be copied:
+
+```bash
+# See full copy plan with explanations
+cry explain-copy
+
+# Preview spawn without making changes
+cry spawn feature-test --new --dry-run
+```
+
+Both commands show:
+- Which files **will** be copied (safe: gitignored + in include patterns)
+- Which files are **blocked** (tracked or not ignored)
+- **Warnings** if include patterns match tracked files
+
+**Example: Diagnosing a blocked file**
+
+```bash
+$ cry explain-copy
+...
+✗ Blocked (1 file):
+  • ⚠ secrets.txt
+      File is not ignored by git (could be accidentally committed)
+```
+
+**Fix:** Add the file to `.gitignore`:
+
+```bash
+echo "secrets.txt" >> .gitignore
+```
 
 ## Using with AI Agents
 

@@ -20,7 +20,7 @@ import {
 } from '../lib/git.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import { getDefaultWorktreePath } from '../lib/paths.js';
-import { processSecrets } from '../lib/secrets.js';
+import { processSecrets, generateCopyPlan, formatCopyPlan } from '../lib/secrets.js';
 import { createSessionManifest } from '../lib/session.js';
 import * as out from '../lib/output.js';
 import type { SecretMode } from '../lib/types.js';
@@ -34,6 +34,7 @@ interface SpawnOptions {
   run?: string;
   agent?: string;
   finishOnExit?: boolean;
+  dryRun?: boolean;
 }
 
 /**
@@ -200,6 +201,24 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   out.log(`  Path:   ${out.fmt.path(worktreePath)}`);
   out.log(`  Mode:   ${out.fmt.cyan(mode)}`);
   out.newline();
+
+  // Handle dry-run mode
+  if (options.dryRun) {
+    out.header('Dry Run - Copy Plan');
+
+    if (mode === 'none') {
+      out.log(out.fmt.dim('  Secret mode is "none" — no files will be copied/symlinked'));
+    } else if (config.include.length === 0) {
+      out.log(out.fmt.dim('  No include patterns configured'));
+    } else {
+      const plan = await generateCopyPlan(config.include, repoRoot);
+      out.log(formatCopyPlan(plan, mode));
+    }
+
+    out.newline();
+    out.log(out.fmt.dim('Dry run complete. No changes were made.'));
+    return;
+  }
 
   // Create the worktree
   try {
