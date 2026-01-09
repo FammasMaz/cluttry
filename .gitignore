@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files
+.env
+.env.*
+
+# VWT local config (machine-specific)
+.vwt.local.json
+
+# Worktrees directory
+.worktrees/
+
+# VWT (Vibe Worktrees)
+.worktreeinclude

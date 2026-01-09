@@ -1,0 +1,41 @@
+{
+  "name": "cluttry",
+  "version": "1.0.0",
+  "description": "Cluttry - Git worktree management for parallel AI-agent sessions",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cry": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:bun": "bun build src/index.ts --outdir dist --target node",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "start:bun": "bun run src/index.ts",
+    "test": "vitest run",
+    "test:bun": "bun test",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write 'src/**/*.ts'",
+    "prepare": "npm run build"
+  },
+  "keywords": ["git", "worktree", "cli", "ai", "agent", "claude", "vibe", "bun"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "glob": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "prettier": "^3.1.0"
+  }
+}
