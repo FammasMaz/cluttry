@@ -1,0 +1,35 @@
+# Source files (dist is included)
+src/
+
+# Tests
+tests/
+vitest.config.ts
+*.test.ts
+
+# Development config
+.github/
+.claude/
+tsconfig.json
+.cry.json
+.cry.local.json
+
+# Documentation for contributors only
+CLAUDE.md
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tgz
+coverage/
