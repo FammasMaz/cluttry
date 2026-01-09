@@ -162,14 +162,21 @@ program
     await list({ json: options.json });
   });
 
-// cry open <branch-or-path>
+// cry open [branch-or-path]
 program
-  .command('open <branch-or-path>')
-  .description('Open or navigate to a worktree by branch name or path')
-  .option('-c, --cmd <cmd>', 'Command to execute in the worktree directory')
+  .command('open [branch-or-path]')
+  .description('Open a worktree in agent (Claude) or editor (VS Code)')
+  .option('-c, --cmd <cmd>', 'Custom command to execute in the worktree directory')
   .option('-p, --path-only', 'Only print the path (for scripting)')
-  .action(async (branchOrPath: string, options) => {
-    await open(branchOrPath, { cmd: options.cmd, pathOnly: options.pathOnly });
+  .option('-a, --agent', 'Open in agent (Claude Code)')
+  .option('-e, --editor', 'Open in editor (VS Code)')
+  .action(async (branchOrPath: string | undefined, options) => {
+    await open(branchOrPath, {
+      cmd: options.cmd,
+      pathOnly: options.pathOnly,
+      agent: options.agent,
+      editor: options.editor,
+    });
   });
 
 // cry rm <branch-or-path>

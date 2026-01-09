@@ -168,25 +168,42 @@ cry list [--json]
 
 Shows: branch name, commit SHA, dirty status, last modified time, and path.
 
-### `cry open <branch-or-path>`
+### `cry open [branch-or-path]`
 
-Navigate to or run a command in a worktree.
+Open a worktree in your AI agent (Claude) or editor (VS Code).
 
 ```bash
-cry open <branch-or-path> [--cmd <cmd>]
+cry open [branch-or-path] [options]
+
+Options:
+  -a, --agent        Open in agent (Claude Code)
+  -e, --editor       Open in editor (VS Code)
+  -c, --cmd <cmd>    Custom command to execute
+  -p, --path-only    Only print the path (for scripting)
 ```
+
+**Default behavior:** Opens in agent (Claude). If agent not found, falls back to editor.
 
 **Examples:**
 
 ```bash
-# Show path and cd instructions
+# Open worktree in Claude (default)
 cry open feature-auth
 
-# Run a command in the worktree
-cry open feature-auth --cmd "npm test"
+# Open current worktree in Claude (if already in one)
+cry open
 
 # Open in VS Code
-cry open feature-auth --cmd "code ."
+cry open feature-auth --editor
+
+# Open in agent explicitly
+cry open feature-auth --agent
+
+# Run a custom command
+cry open feature-auth --cmd "npm test"
+
+# Get path for scripting
+cry open feature-auth --path-only
 ```
 
 ### `cry rm <branch-or-path>`
@@ -376,7 +393,8 @@ This is equivalent to what `cry spawn --dry-run` shows for the copy plan.
   "hooks": {
     "postCreate": ["npm install"]
   },
-  "agentCommand": "claude"
+  "agentCommand": "claude",
+  "editorCommand": "code"
 }
 ```
 
@@ -386,7 +404,8 @@ This is equivalent to what `cry spawn --dry-run` shows for the copy plan.
 | `include` | Glob patterns for files to copy/symlink |
 | `worktreeBaseDir` | Base directory for worktrees (default: `.worktrees/`) |
 | `hooks.postCreate` | Commands to run after spawning |
-| `agentCommand` | Command to launch AI agent |
+| `agentCommand` | Command to launch AI agent (default: `claude`) |
+| `editorCommand` | Command to launch editor (default: `code` for VS Code) |
 
 ### `.cry.local.json` (gitignored)
 

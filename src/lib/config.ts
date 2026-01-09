@@ -17,6 +17,7 @@ const DEFAULT_CONFIG: CryConfig = {
     postCreate: [],
   },
   agentCommand: 'claude',
+  editorCommand: 'code',
 };
 
 /**
@@ -68,6 +69,7 @@ export function mergeConfig(config: CryConfig | null, localConfig: CryLocalConfi
       ],
     },
     agentCommand: localConfig?.agentCommand ?? base.agentCommand ?? 'claude',
+    editorCommand: localConfig?.editorCommand ?? base.editorCommand ?? 'code',
   };
 }
 

@@ -13,8 +13,10 @@ export interface CryConfig {
   hooks?: {
     postCreate?: string[];
   };
-  /** Default agent command */
+  /** Default agent command (e.g. 'claude') */
   agentCommand?: string;
+  /** Default editor command (e.g. 'code' for VS Code) */
+  editorCommand?: string;
 }
 
 export interface CryLocalConfig {
@@ -28,6 +30,8 @@ export interface CryLocalConfig {
   };
   /** Override agent command */
   agentCommand?: string;
+  /** Override editor command */
+  editorCommand?: string;
 }
 
 export interface MergedConfig {
@@ -38,6 +42,7 @@ export interface MergedConfig {
     postCreate: string[];
   };
   agentCommand: string;
+  editorCommand: string;
 }
 
 export interface WorktreeInfo {
