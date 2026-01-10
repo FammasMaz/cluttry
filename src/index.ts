@@ -268,6 +268,7 @@ program
   .description('Complete session: show summary, optionally create PR, and cleanup')
   .option('-j, --json', 'Output as JSON (summary only, no actions)')
   .option('-m, --message <msg>', 'Commit message (stages all, commits, non-interactive)')
+  .option('--base-branch <branch>', 'Base branch for PR (overrides session/auto-detected)')
   .option('--skip-commit', 'Skip commit step entirely (still safe)')
   .option('--skip-hooks', 'Skip all hooks (preFinish, postFinish, preMerge)')
   .option('--dry-run', 'Show what would happen without executing')
@@ -285,6 +286,7 @@ program
     await finish({
       json: options.json,
       message: options.message,
+      baseBranch: options.baseBranch,
       skipCommit: options.skipCommit,
       skipHooks: options.skipHooks,
       dryRun: options.dryRun,

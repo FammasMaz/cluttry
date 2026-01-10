@@ -51,6 +51,7 @@ export interface FinishOptions {
   prMerge?: boolean;
   noMerge?: boolean;
   cherryPick?: boolean;
+  baseBranch?: string;
 }
 
 interface SessionSummary {
@@ -977,6 +978,11 @@ export async function finish(options: FinishOptions): Promise<void> {
       fail(errors.sessionNotFound('current directory'));
     }
     session = detected as SessionManifest;
+  }
+
+  // Override baseBranch if provided via CLI
+  if (options.baseBranch) {
+    session.baseBranch = options.baseBranch;
   }
 
   // Build summary
