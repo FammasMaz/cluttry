@@ -701,6 +701,91 @@ function showDiff(cwd: string): void {
 }
 
 /**
+ * Build list of planned actions based on current state and options
+ */
+function buildPlannedActions(
+  summary: SessionSummary,
+  options: FinishOptions,
+  canCreatePr: boolean
+): string[] {
+  const actions: string[] = [];
+  const isDirty = !summary.status.clean;
+  const hasCommits = summary.commits.ahead > 0;
+
+  // Commit action
+  if (isDirty) {
+    if (options.skipCommit) {
+      actions.push('Skip commit (--skip-commit)');
+    } else if (options.message) {
+      actions.push(`Commit all changes with message: "${options.message}"`);
+    } else {
+      actions.push('Commit changes (will prompt for details)');
+    }
+  }
+
+  // PR/Push actions
+  if (options.cherryPick) {
+    if (hasCommits || isDirty) {
+      actions.push(`Cherry-pick commits onto ${summary.baseBranch}`);
+    }
+  } else if (hasCommits || isDirty) {
+    if (canCreatePr) {
+      actions.push(`Push branch ${summary.branch} to origin`);
+      actions.push(`Create PR: ${summary.branch} → ${summary.baseBranch}`);
+    } else {
+      actions.push('Show manual PR instructions (gh CLI not available)');
+    }
+  }
+
+  // Merge actions (if specified via flags)
+  if (options.merge) {
+    actions.push(`Merge ${summary.branch} into ${summary.baseBranch} locally`);
+  } else if (options.prMerge) {
+    actions.push(`Merge PR via GitHub (gh pr merge)`);
+  }
+
+  // Cleanup actions
+  if (options.cleanup) {
+    actions.push('Remove worktree after completion');
+    if (options.deleteBranch) {
+      actions.push(`Delete branch ${summary.branch}`);
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * Show planned actions and ask for confirmation
+ * Returns true if user confirms, false if aborted
+ */
+async function showPlannedActionsAndConfirm(
+  actions: string[],
+  dryRun: boolean
+): Promise<boolean> {
+  if (actions.length === 0) {
+    return true; // Nothing to do, no confirmation needed
+  }
+
+  out.newline();
+  out.header('Planned Actions');
+  out.newline();
+
+  for (const action of actions) {
+    out.log(`  • ${action}`);
+  }
+
+  out.newline();
+
+  if (dryRun) {
+    out.log(out.fmt.dim('[dry-run] Would perform the above actions.'));
+    return true;
+  }
+
+  return await confirm('Proceed with these actions?');
+}
+
+/**
  * Generate a default commit message from branch name
  * feature/add-login -> Add login
  * fix-auth-bug -> Fix auth bug
@@ -1005,6 +1090,22 @@ export async function finish(options: FinishOptions): Promise<void> {
   const hasCommits = summary.commits.ahead > 0;
   const dryRun = options.dryRun ?? false;
 
+  // Check PR creation capability early for confirmation display
+  const ghAvailable = isGhAvailable();
+  const hasOrigin = hasOriginRemote(cwd);
+  const canCreatePr = ghAvailable && hasOrigin;
+
+  // Show planned actions and get confirmation (interactive mode only)
+  // Skip confirmation when: non-interactive mode, message provided, or dry-run
+  if (!options.nonInteractive && !options.message && !dryRun) {
+    const plannedActions = buildPlannedActions(summary, options, canCreatePr);
+    const confirmed = await showPlannedActionsAndConfirm(plannedActions, dryRun);
+    if (!confirmed) {
+      out.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
   // Run preFinish hooks
   if (!options.skipHooks && config && config.hooks.preFinish.length > 0) {
     if (dryRun) {
@@ -1098,9 +1199,6 @@ export async function finish(options: FinishOptions): Promise<void> {
 
   // Check for commits to create PR
   const updatedHasCommits = summary.commits.ahead > 0 || hasCommits;
-  const ghAvailable = isGhAvailable();
-  const hasOrigin = hasOriginRemote(cwd);
-  const canCreatePr = ghAvailable && hasOrigin;
 
   // Cherry-pick workflow (alternative to PR)
   if (options.cherryPick) {
