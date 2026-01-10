@@ -52,13 +52,14 @@ cry feat-auth claude --finish-on-exit
 ### 2. Work
 
 Your AI agent works in the isolated worktree. Each worktree has:
+
 - Its own branch
 - Copy of your `.env` and secret files (or injected env vars)
 - Independent git state
 
 Run multiple sessions in parallel—each in its own terminal.
 
-### 3. Finish (PR-first)
+### 3. Finish (PR-first or Cherry-pick)
 
 From inside the worktree:
 
@@ -67,6 +68,7 @@ cry finish
 ```
 
 Interactive flow:
+
 1. Runs `preFinish` hooks (tests, lint, etc.)
 2. Shows session summary (branch, commits, diff stats)
 3. If dirty: offers to commit (with suggested message from branch name)
@@ -76,9 +78,27 @@ Interactive flow:
 7. Offers cleanup prompt
 
 Non-interactive:
+
 ```bash
 cry finish -m "Add user authentication" --cleanup
 ```
+
+#### Cherry-pick workflow
+
+As an alternative to creating a PR, you can cherry-pick your commits directly onto the base branch:
+
+```bash
+cry finish --cherry-pick
+```
+
+This will:
+
+1. Get all commits ahead of the base branch
+2. Switch to the base branch in the main worktree
+3. Cherry-pick each commit in order
+4. Push the updated base branch to origin
+
+This is useful when you want to bypass the PR workflow and apply changes directly.
 
 ### 4. Cleanup
 
@@ -129,18 +149,18 @@ After `cry init`, edit `.cry.json`:
 }
 ```
 
-| Key | Description |
-|-----|-------------|
-| `include` | Glob patterns for files to copy/inject to worktrees |
-| `defaultMode` | `copy`, `symlink`, `inject`, or `none` |
-| `hooks.postCreate` | Commands to run after spawn |
-| `hooks.preFinish` | Commands to run before finish (tests, lint) |
-| `hooks.postFinish` | Commands to run after PR creation |
-| `hooks.preMerge` | Commands to run before merge attempts |
-| `agentCommand` | Agent CLI command (default: `claude`) |
-| `editorCommand` | Editor command (default: `code`) |
-| `injectNonEnv` | For inject mode: `skip` or `symlink` non-dotenv files |
-| `agents` | Agent presets (see below) |
+| Key                | Description                                           |
+| ------------------ | ----------------------------------------------------- |
+| `include`          | Glob patterns for files to copy/inject to worktrees   |
+| `defaultMode`      | `copy`, `symlink`, `inject`, or `none`                |
+| `hooks.postCreate` | Commands to run after spawn                           |
+| `hooks.preFinish`  | Commands to run before finish (tests, lint)           |
+| `hooks.postFinish` | Commands to run after PR creation                     |
+| `hooks.preMerge`   | Commands to run before merge attempts                 |
+| `agentCommand`     | Agent CLI command (default: `claude`)                 |
+| `editorCommand`    | Editor command (default: `code`)                      |
+| `injectNonEnv`     | For inject mode: `skip` or `symlink` non-dotenv files |
+| `agents`           | Agent presets (see below)                             |
 
 Machine-specific overrides go in `.cry.local.json` (gitignored).
 
@@ -172,10 +192,12 @@ Built-in presets for `claude` and `cursor` are provided. Override or add your ow
 **Tracked files are never copied.** This is enforced, not optional.
 
 For a file to be copied to a worktree, it must pass both checks:
+
 1. **Not tracked** by git (`git ls-files` returns nothing)
 2. **Ignored** by git (listed in `.gitignore`)
 
 This means:
+
 - Your `.env` files copy automatically (they're gitignored)
 - Your source code stays in git (tracked files can't be copied)
 - Accidentally tracked secrets won't propagate
@@ -192,14 +214,15 @@ cry spawn feat-test --new --dry-run
 
 ### Copy vs Symlink vs Inject
 
-| Mode | Behavior |
-|------|----------|
-| `copy` | Independent copies. Safe default. |
-| `symlink` | Linked to original. Changes sync everywhere. |
-| `inject` | **No files copied.** Env vars injected into commands. Safest for AI agents. |
-| `none` | Nothing copied. Set up secrets manually. |
+| Mode      | Behavior                                                                    |
+| --------- | --------------------------------------------------------------------------- |
+| `copy`    | Independent copies. Safe default.                                           |
+| `symlink` | Linked to original. Changes sync everywhere.                                |
+| `inject`  | **No files copied.** Env vars injected into commands. Safest for AI agents. |
+| `none`    | Nothing copied. Set up secrets manually.                                    |
 
 **Inject mode** is recommended when running AI agents:
+
 - Parses `.env` files and injects variables into hooks and agent commands
 - No secret files exist in the worktree for the agent to read
 - Non-dotenv files are skipped (or optionally symlinked via `injectNonEnv: "symlink"`)
@@ -208,27 +231,27 @@ cry spawn feat-test --new --dry-run
 
 ### Session Lifecycle
 
-| Command | Purpose |
-|---------|---------|
-| `cry spawn <branch>` | Create worktree |
-| `cry finish` | Commit → PR → cleanup |
-| `cry rm <branch>` | Remove worktree |
+| Command              | Purpose               |
+| -------------------- | --------------------- |
+| `cry spawn <branch>` | Create worktree       |
+| `cry finish`         | Commit → PR → cleanup |
+| `cry rm <branch>`    | Remove worktree       |
 
 ### Navigation
 
-| Command | Purpose |
-|---------|---------|
-| `cry list` | List all worktrees |
-| `cry open <branch>` | Open in agent/editor |
-| `cry resume <branch>` | Resume session |
+| Command               | Purpose              |
+| --------------------- | -------------------- |
+| `cry list`            | List all worktrees   |
+| `cry open <branch>`   | Open in agent/editor |
+| `cry resume <branch>` | Resume session       |
 
 ### Maintenance
 
-| Command | Purpose |
-|---------|---------|
-| `cry gc` | Clean stale sessions |
-| `cry prune` | Clean git worktree refs |
-| `cry doctor` | Check configuration |
+| Command      | Purpose                 |
+| ------------ | ----------------------- |
+| `cry gc`     | Clean stale sessions    |
+| `cry prune`  | Clean git worktree refs |
+| `cry doctor` | Check configuration     |
 
 ## Key Flags
 
@@ -252,6 +275,7 @@ cry spawn feat-test --new --dry-run
 ```
 -m, --message <msg>     Commit with message (non-interactive)
 --skip-hooks            Skip all hooks (preFinish, postFinish, preMerge)
+--cherry-pick           Cherry-pick commits to base branch instead of creating PR
 --merge                 Merge locally into base branch after PR
 --pr-merge              Merge PR via GitHub (gh pr merge)
 --no-merge              Skip merge prompt (PR only)
@@ -273,14 +297,14 @@ cry spawn feat-test --new --dry-run
 
 ### Why not just `git worktree`?
 
-| Task | git worktree | cry |
-|------|--------------|-----|
-| Create worktree | `git worktree add -b feat ../feat` | `cry feat` |
-| Copy secrets | Manual copy | Automatic |
-| Run setup | `cd ../feat && npm install` | `--run "npm install"` |
-| Launch agent | `cd ../feat && claude` | `--agent claude` |
-| Create PR | Switch context, push, open browser | `cry finish` |
-| Cleanup | `git worktree remove`, `git branch -d` | `cry rm --with-branch` |
+| Task            | git worktree                           | cry                    |
+| --------------- | -------------------------------------- | ---------------------- |
+| Create worktree | `git worktree add -b feat ../feat`     | `cry feat`             |
+| Copy secrets    | Manual copy                            | Automatic              |
+| Run setup       | `cd ../feat && npm install`            | `--run "npm install"`  |
+| Launch agent    | `cd ../feat && claude`                 | `--agent claude`       |
+| Create PR       | Switch context, push, open browser     | `cry finish`           |
+| Cleanup         | `git worktree remove`, `git branch -d` | `cry rm --with-branch` |
 
 cry handles the lifecycle. git worktree is just step 1.
 
@@ -305,16 +329,19 @@ brew install gh && gh auth login
 ### How do I prevent AI from reading secrets?
 
 **Best option: Use inject mode** (no files copied to worktree):
+
 ```bash
 cry spawn feat-auth --new --agent claude --mode inject
 ```
 
 Or configure it as default in `.cry.json`:
+
 ```json
 { "defaultMode": "inject" }
 ```
 
 For Claude Code specifically, you can also add to `.clauderc`:
+
 ```json
 { "deny": [".env", ".env.*"] }
 ```
