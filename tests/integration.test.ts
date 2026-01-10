@@ -1172,7 +1172,12 @@ describe('cry CLI integration tests', () => {
       // Update config to use a simulated agent that exits immediately
       const configPath = `${repo.root}/.cry.json`;
       const config = JSON.parse(readFile(repo.root, '.cry.json'));
-      config.agentCommand = 'node -e "process.exit(0)"';
+      config.agents = config.agents || {};
+      config.agents.claude = {
+        command: 'node',
+        args: ['-e', '"process.exit(0)"'],
+        finishOnExitDefault: true,
+      };
       require('fs').writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       // Spawn with --finish-on-exit and provide 'n' to skip the menu
@@ -1198,7 +1203,12 @@ describe('cry CLI integration tests', () => {
       // Update config to use a simulated agent that exits with error
       const configPath = `${repo.root}/.cry.json`;
       const config = JSON.parse(readFile(repo.root, '.cry.json'));
-      config.agentCommand = 'node -e "process.exit(42)"';
+      config.agents = config.agents || {};
+      config.agents.claude = {
+        command: 'node',
+        args: ['-e', '"process.exit(42)"'],
+        finishOnExitDefault: true,
+      };
       require('fs').writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       // Spawn with --finish-on-exit and answer 'n'
@@ -1224,7 +1234,12 @@ describe('cry CLI integration tests', () => {
       // Update config to use a simulated agent
       const configPath = `${repo.root}/.cry.json`;
       const config = JSON.parse(readFile(repo.root, '.cry.json'));
-      config.agentCommand = 'node -e "process.exit(0)"';
+      config.agents = config.agents || {};
+      config.agents.claude = {
+        command: 'node',
+        args: ['-e', '"process.exit(0)"'],
+        finishOnExitDefault: false,
+      };
       require('fs').writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       // Spawn WITHOUT --finish-on-exit
