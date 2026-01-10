@@ -2,28 +2,31 @@
  * Git operations for cry
  */
 
-import { execSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import type { WorktreeInfo } from './types.js';
+import { execSync, spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import type { WorktreeInfo } from "./types.js";
 
 /**
  * Execute a git command and return stdout
  * Uses spawnSync to properly handle arguments with spaces
  */
 export function git(args: string[], cwd?: string): string {
-  const result = spawnSync('git', args, {
+  const result = spawnSync("git", args, {
     cwd,
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
   });
 
   if (result.status !== 0) {
-    const stderr = result.stderr?.toString?.() || result.error?.message || 'Unknown git error';
+    const stderr =
+      result.stderr?.toString?.() ||
+      result.error?.message ||
+      "Unknown git error";
     throw new Error(stderr.trim());
   }
 
-  return (result.stdout || '').trim();
+  return (result.stdout || "").trim();
 }
 
 /**
@@ -31,7 +34,7 @@ export function git(args: string[], cwd?: string): string {
  */
 export function isGitRepo(cwd?: string): boolean {
   try {
-    git(['rev-parse', '--git-dir'], cwd);
+    git(["rev-parse", "--git-dir"], cwd);
     return true;
   } catch {
     return false;
@@ -42,7 +45,7 @@ export function isGitRepo(cwd?: string): boolean {
  * Get the root directory of the git repository
  */
 export function getRepoRoot(cwd?: string): string {
-  return git(['rev-parse', '--show-toplevel'], cwd);
+  return git(["rev-parse", "--show-toplevel"], cwd);
 }
 
 /**
@@ -58,7 +61,7 @@ export function getRepoName(cwd?: string): string {
  */
 export function branchExists(branch: string, cwd?: string): boolean {
   try {
-    git(['rev-parse', '--verify', `refs/heads/${branch}`], cwd);
+    git(["rev-parse", "--verify", `refs/heads/${branch}`], cwd);
     return true;
   } catch {
     return false;
@@ -70,9 +73,9 @@ export function branchExists(branch: string, cwd?: string): boolean {
  */
 export function getCurrentBranch(cwd?: string): string | null {
   try {
-    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
     // Returns 'HEAD' when in detached state
-    if (branch === 'HEAD') {
+    if (branch === "HEAD") {
       return null;
     }
     return branch;
@@ -86,8 +89,8 @@ export function getCurrentBranch(cwd?: string): string | null {
  */
 export function isDetachedHead(cwd?: string): boolean {
   try {
-    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
-    return branch === 'HEAD';
+    const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+    return branch === "HEAD";
   } catch {
     return false;
   }
@@ -99,7 +102,7 @@ export function isDetachedHead(cwd?: string): boolean {
 export function getDefaultBranch(cwd?: string): string | null {
   // Try origin/HEAD first
   try {
-    const ref = git(['symbolic-ref', 'refs/remotes/origin/HEAD'], cwd);
+    const ref = git(["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
     // Returns something like "refs/remotes/origin/main"
     const match = ref.match(/refs\/remotes\/origin\/(.+)$/);
     if (match) {
@@ -110,7 +113,7 @@ export function getDefaultBranch(cwd?: string): string | null {
   }
 
   // Try to find main or master
-  for (const candidate of ['main', 'master']) {
+  for (const candidate of ["main", "master"]) {
     if (branchExists(candidate, cwd)) {
       return candidate;
     }
@@ -122,9 +125,13 @@ export function getDefaultBranch(cwd?: string): string | null {
 /**
  * Get the merge-base between two refs
  */
-export function getMergeBase(ref1: string, ref2: string, cwd?: string): string | null {
+export function getMergeBase(
+  ref1: string,
+  ref2: string,
+  cwd?: string,
+): string | null {
   try {
-    return git(['merge-base', ref1, ref2], cwd);
+    return git(["merge-base", ref1, ref2], cwd);
   } catch {
     return null;
   }
@@ -135,7 +142,7 @@ export function getMergeBase(ref1: string, ref2: string, cwd?: string): string |
  */
 export function getUpstreamBranch(cwd?: string): string | null {
   try {
-    const upstream = git(['rev-parse', '--abbrev-ref', '@{upstream}'], cwd);
+    const upstream = git(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd);
     return upstream;
   } catch {
     return null;
@@ -147,7 +154,7 @@ export function getUpstreamBranch(cwd?: string): string | null {
  */
 export function isTracked(filePath: string, cwd?: string): boolean {
   try {
-    git(['ls-files', '--error-unmatch', filePath], cwd);
+    git(["ls-files", "--error-unmatch", filePath], cwd);
     return true;
   } catch {
     return false;
@@ -159,7 +166,7 @@ export function isTracked(filePath: string, cwd?: string): boolean {
  */
 export function isIgnored(filePath: string, cwd?: string): boolean {
   try {
-    git(['check-ignore', '-q', filePath], cwd);
+    git(["check-ignore", "-q", filePath], cwd);
     return true;
   } catch {
     return false;
@@ -170,12 +177,12 @@ export function isIgnored(filePath: string, cwd?: string): boolean {
  * List all worktrees using porcelain format
  */
 export function listWorktrees(cwd?: string): WorktreeInfo[] {
-  const output = git(['worktree', 'list', '--porcelain'], cwd);
+  const output = git(["worktree", "list", "--porcelain"], cwd);
   const worktrees: WorktreeInfo[] = [];
   let current: Partial<WorktreeInfo> = {};
 
-  for (const line of output.split('\n')) {
-    if (line === '') {
+  for (const line of output.split("\n")) {
+    if (line === "") {
       if (current.worktree) {
         worktrees.push(current as WorktreeInfo);
       }
@@ -183,15 +190,15 @@ export function listWorktrees(cwd?: string): WorktreeInfo[] {
       continue;
     }
 
-    if (line.startsWith('worktree ')) {
+    if (line.startsWith("worktree ")) {
       current.worktree = line.substring(9);
-    } else if (line.startsWith('HEAD ')) {
+    } else if (line.startsWith("HEAD ")) {
       current.head = line.substring(5);
-    } else if (line.startsWith('branch ')) {
-      current.branch = line.substring(7).replace('refs/heads/', '');
-    } else if (line === 'bare') {
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.substring(7).replace("refs/heads/", "");
+    } else if (line === "bare") {
       current.bare = true;
-    } else if (line === 'detached') {
+    } else if (line === "detached") {
       current.detached = true;
     }
   }
@@ -211,11 +218,11 @@ export function addWorktree(
   targetPath: string,
   branch: string,
   createBranch: boolean,
-  cwd?: string
+  cwd?: string,
 ): void {
-  const args = ['worktree', 'add'];
+  const args = ["worktree", "add"];
   if (createBranch) {
-    args.push('-b', branch);
+    args.push("-b", branch);
   }
   args.push(targetPath);
   if (!createBranch) {
@@ -227,10 +234,14 @@ export function addWorktree(
 /**
  * Remove a worktree
  */
-export function removeWorktree(worktreePath: string, force: boolean, cwd?: string): void {
-  const args = ['worktree', 'remove'];
+export function removeWorktree(
+  worktreePath: string,
+  force: boolean,
+  cwd?: string,
+): void {
+  const args = ["worktree", "remove"];
   if (force) {
-    args.push('--force');
+    args.push("--force");
   }
   args.push(worktreePath);
   git(args, cwd);
@@ -240,15 +251,19 @@ export function removeWorktree(worktreePath: string, force: boolean, cwd?: strin
  * Prune worktrees
  */
 export function pruneWorktrees(cwd?: string): string {
-  return git(['worktree', 'prune', '--verbose'], cwd);
+  return git(["worktree", "prune", "--verbose"], cwd);
 }
 
 /**
  * Delete a branch
  */
-export function deleteBranch(branch: string, force: boolean, cwd?: string): void {
-  const flag = force ? '-D' : '-d';
-  git(['branch', flag, branch], cwd);
+export function deleteBranch(
+  branch: string,
+  force: boolean,
+  cwd?: string,
+): void {
+  const flag = force ? "-D" : "-d";
+  git(["branch", flag, branch], cwd);
 }
 
 /**
@@ -256,7 +271,7 @@ export function deleteBranch(branch: string, force: boolean, cwd?: string): void
  */
 export function isWorktreeDirty(worktreePath: string): boolean {
   try {
-    const status = git(['status', '--porcelain'], worktreePath);
+    const status = git(["status", "--porcelain"], worktreePath);
     return status.length > 0;
   } catch {
     return false;
@@ -268,9 +283,9 @@ export function isWorktreeDirty(worktreePath: string): boolean {
  */
 export function getShortHead(worktreePath: string): string {
   try {
-    return git(['rev-parse', '--short', 'HEAD'], worktreePath);
+    return git(["rev-parse", "--short", "HEAD"], worktreePath);
   } catch {
-    return 'unknown';
+    return "unknown";
   }
 }
 
@@ -280,24 +295,24 @@ export function getShortHead(worktreePath: string): string {
 export function runCommand(
   command: string,
   cwd: string,
-  env?: Record<string, string | undefined>
+  env?: Record<string, string | undefined>,
 ): Promise<number> {
   return new Promise((resolve) => {
-    const isWindows = process.platform === 'win32';
-    const shell = isWindows ? 'cmd.exe' : '/bin/sh';
-    const shellArgs = isWindows ? ['/c', command] : ['-c', command];
+    const isWindows = process.platform === "win32";
+    const shell = isWindows ? "cmd.exe" : "/bin/sh";
+    const shellArgs = isWindows ? ["/c", command] : ["-c", command];
 
     const child = spawn(shell, shellArgs, {
       cwd,
-      stdio: 'inherit',
+      stdio: "inherit",
       env: env ? { ...process.env, ...env } : process.env,
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
       resolve(code ?? 1);
     });
 
-    child.on('error', () => {
+    child.on("error", () => {
       resolve(1);
     });
   });
@@ -310,11 +325,62 @@ export function commandExists(cmd: string): boolean {
   try {
     // Extract just the command name (first word) from a potentially complex command
     const cmdName = cmd.split(/\s+/)[0];
-    const isWindows = process.platform === 'win32';
+    const isWindows = process.platform === "win32";
     const checkCmd = isWindows ? `where ${cmdName}` : `which ${cmdName}`;
-    execSync(checkCmd, { stdio: 'pipe' });
+    execSync(checkCmd, { stdio: "pipe" });
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Get list of commits ahead of a base branch
+ * Returns commits in order from oldest to newest (for cherry-picking)
+ */
+export function getCommitsAhead(
+  baseBranch: string,
+  cwd?: string,
+): Array<{ sha: string; message: string }> {
+  try {
+    const output = git(
+      ["log", "--oneline", "--no-decorate", "--reverse", `${baseBranch}..HEAD`],
+      cwd,
+    );
+    if (!output.trim()) {
+      return [];
+    }
+    return output
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => {
+        const [sha, ...rest] = line.split(" ");
+        return { sha, message: rest.join(" ") };
+      });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Cherry-pick a single commit
+ */
+export function cherryPick(commitSha: string, cwd?: string): boolean {
+  try {
+    git(["cherry-pick", commitSha], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Abort an in-progress cherry-pick
+ */
+export function cherryPickAbort(cwd?: string): void {
+  try {
+    git(["cherry-pick", "--abort"], cwd);
+  } catch {
+    // Abort may fail if no cherry-pick in progress
   }
 }
