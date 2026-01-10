@@ -37,6 +37,22 @@ export interface SessionManifest {
   agent?: string;
   /** Human-readable task name (optional) */
   taskName?: string;
+
+  // Extended fields for session lifecycle tracking
+  /** Session status */
+  status?: 'active' | 'finished' | 'cleaned' | 'error';
+  /** PR URL if created */
+  prUrl?: string;
+  /** ISO timestamp of last activity */
+  lastActiveAt?: string;
+  /** Result of last finish attempt */
+  lastFinishResult?: {
+    success: boolean;
+    prCreated: boolean;
+    checksRan: boolean;
+    checksPass?: boolean;
+    message?: string;
+  };
 }
 
 export interface CreateSessionOptions {
@@ -86,15 +102,18 @@ export function ensureSessionsDir(repoRoot: string): void {
  */
 export function createSessionManifest(options: CreateSessionOptions): SessionManifest {
   const id = generateSessionId();
+  const now = new Date().toISOString();
   const manifest: SessionManifest = {
     id,
     repoRoot: options.repoRoot,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
     branch: options.branch,
     baseBranch: options.baseBranch,
     worktreePath: options.worktreePath,
     agent: options.agent,
     taskName: options.taskName,
+    status: 'active',
+    lastActiveAt: now,
   };
 
   // Ensure directory exists and write manifest

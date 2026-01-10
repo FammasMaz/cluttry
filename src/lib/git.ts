@@ -277,7 +277,11 @@ export function getShortHead(worktreePath: string): string {
 /**
  * Run a command in a directory
  */
-export function runCommand(command: string, cwd: string): Promise<number> {
+export function runCommand(
+  command: string,
+  cwd: string,
+  env?: Record<string, string | undefined>
+): Promise<number> {
   return new Promise((resolve) => {
     const isWindows = process.platform === 'win32';
     const shell = isWindows ? 'cmd.exe' : '/bin/sh';
@@ -286,7 +290,7 @@ export function runCommand(command: string, cwd: string): Promise<number> {
     const child = spawn(shell, shellArgs, {
       cwd,
       stdio: 'inherit',
-      env: process.env,
+      env: env ? { ...process.env, ...env } : process.env,
     });
 
     child.on('close', (code) => {

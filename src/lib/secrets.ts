@@ -10,6 +10,7 @@ import path from 'node:path';
 import { glob } from 'glob';
 import { isTracked, isIgnored } from './git.js';
 import { validateFileCopy, type FileCopyDecision } from './safety.js';
+import { isDotenvFile, loadEnvFromFile } from './env.js';
 import type { SecretMode } from './types.js';
 import * as out from './output.js';
 
@@ -339,3 +340,204 @@ export function formatCopyPlan(plan: CopyPlan, mode: SecretMode): string {
 
   return lines.join('\n');
 }
+
+/**
+ * Result of inject mode processing
+ */
+export interface InjectResult {
+  /** Environment variables parsed from dotenv files */
+  env: Record<string, string>;
+  /** Non-dotenv files that were skipped */
+  skippedFiles: string[];
+  /** Files that were symlinked (if injectNonEnv: 'symlink') */
+  symlinkFiles: string[];
+  /** Dotenv files that were processed */
+  processedEnvFiles: string[];
+}
+
+/**
+ * Process secrets in inject mode
+ *
+ * - For dotenv files (.env, .env.*, *.env): parse and collect env vars (do NOT copy)
+ * - For non-dotenv files: skip by default, or symlink if configured
+ */
+export async function processInjectMode(
+  patterns: string[],
+  sourceRoot: string,
+  targetRoot: string,
+  options: { injectNonEnv?: 'skip' | 'symlink' } = {}
+): Promise<InjectResult> {
+  const result: InjectResult = {
+    env: {},
+    skippedFiles: [],
+    symlinkFiles: [],
+    processedEnvFiles: [],
+  };
+
+  const { injectNonEnv = 'skip' } = options;
+
+  // Get all safe files from patterns
+  const { safe } = await getSafeFiles(patterns, sourceRoot);
+
+  for (const file of safe) {
+    const filePath = path.join(sourceRoot, file.path);
+
+    if (isDotenvFile(file.path)) {
+      // Parse dotenv file and merge into result
+      const envVars = loadEnvFromFile(filePath);
+      Object.assign(result.env, envVars);
+      result.processedEnvFiles.push(file.path);
+    } else {
+      // Non-dotenv file
+      if (injectNonEnv === 'symlink') {
+        try {
+          createSymlink(file.path, sourceRoot, targetRoot);
+          result.symlinkFiles.push(file.path);
+        } catch (error) {
+          result.skippedFiles.push(file.path);
+        }
+      } else {
+        result.skippedFiles.push(file.path);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Generate an inject plan explaining what will happen in inject mode
+ */
+export interface InjectPlan {
+  /** Dotenv files that will be parsed for env vars */
+  willInject: Array<{
+    path: string;
+    reason: string;
+  }>;
+  /** Non-dotenv files that will be skipped */
+  willSkip: Array<{
+    path: string;
+    reason: string;
+  }>;
+  /** Non-dotenv files that will be symlinked */
+  willSymlink: Array<{
+    path: string;
+    reason: string;
+  }>;
+  /** Warnings */
+  warnings: string[];
+  /** Patterns from config */
+  patterns: string[];
+}
+
+/**
+ * Generate an inject plan
+ */
+export async function generateInjectPlan(
+  patterns: string[],
+  repoRoot: string,
+  injectNonEnv: 'skip' | 'symlink' = 'skip'
+): Promise<InjectPlan> {
+  const plan: InjectPlan = {
+    willInject: [],
+    willSkip: [],
+    willSymlink: [],
+    warnings: [],
+    patterns,
+  };
+
+  if (patterns.length === 0) {
+    return plan;
+  }
+
+  const { safe, unsafe } = await getSafeFiles(patterns, repoRoot);
+
+  for (const file of safe) {
+    if (isDotenvFile(file.path)) {
+      plan.willInject.push({
+        path: file.path,
+        reason: 'dotenv file - env vars will be injected',
+      });
+    } else {
+      if (injectNonEnv === 'symlink') {
+        plan.willSymlink.push({
+          path: file.path,
+          reason: 'non-dotenv file - will be symlinked',
+        });
+      } else {
+        plan.willSkip.push({
+          path: file.path,
+          reason: 'non-dotenv file - will be skipped (use injectNonEnv: "symlink" to symlink)',
+        });
+      }
+    }
+  }
+
+  // Add warnings for unsafe files
+  for (const file of unsafe) {
+    plan.warnings.push(`Pattern matches unsafe file: ${file.path} — ${file.reason}`);
+  }
+
+  return plan;
+}
+
+/**
+ * Format an inject plan for human-readable output
+ */
+export function formatInjectPlan(plan: InjectPlan): string {
+  const lines: string[] = [];
+
+  lines.push(out.fmt.bold('Inject Mode - Include patterns:'));
+  if (plan.patterns.length === 0) {
+    lines.push('  (none configured)');
+  } else {
+    for (const pattern of plan.patterns) {
+      lines.push(`  ${out.fmt.dim('•')} ${pattern}`);
+    }
+  }
+  lines.push('');
+
+  // Warnings
+  if (plan.warnings.length > 0) {
+    lines.push(out.fmt.yellow(out.fmt.bold('⚠ Warnings:')));
+    for (const warning of plan.warnings) {
+      lines.push(`  ${out.fmt.yellow('•')} ${warning}`);
+    }
+    lines.push('');
+  }
+
+  // Files that will be injected
+  lines.push(out.fmt.green(out.fmt.bold(`✓ Will inject env vars from (${plan.willInject.length} file${plan.willInject.length !== 1 ? 's' : ''}):`)));
+  if (plan.willInject.length === 0) {
+    lines.push(`  ${out.fmt.dim('(no dotenv files matched)')}`);
+  } else {
+    for (const file of plan.willInject) {
+      lines.push(`  ${out.fmt.green('•')} ${file.path}`);
+    }
+  }
+  lines.push('');
+
+  // Files that will be symlinked
+  if (plan.willSymlink.length > 0) {
+    lines.push(out.fmt.blue(out.fmt.bold(`↗ Will symlink (${plan.willSymlink.length} file${plan.willSymlink.length !== 1 ? 's' : ''}):`)));
+    for (const file of plan.willSymlink) {
+      lines.push(`  ${out.fmt.blue('•')} ${file.path}`);
+    }
+    lines.push('');
+  }
+
+  // Files that will be skipped
+  if (plan.willSkip.length > 0) {
+    lines.push(out.fmt.dim(`○ Will skip (${plan.willSkip.length} non-dotenv file${plan.willSkip.length !== 1 ? 's' : ''}):`));
+    for (const file of plan.willSkip) {
+      lines.push(`  ${out.fmt.dim('•')} ${file.path}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(out.fmt.dim('Note: Environment variables will be injected into hooks and agent commands.'));
+  lines.push(out.fmt.dim('      No secret files will be copied to the worktree.'));
+
+  return lines.join('\n');
+}
+
