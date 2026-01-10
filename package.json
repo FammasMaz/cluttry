@@ -1,6 +1,6 @@
 {
   "name": "cluttry",
-  "version": "1.5.1",
+  "version": "2.0.0",
   "description": "Cluttry - Git worktree management for parallel AI-agent sessions",
   "type": "module",
   "main": "dist/index.js",
