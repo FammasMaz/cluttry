@@ -1,6 +1,6 @@
 # cluttry
 
-AI session lifecycle in git worktrees.
+**Worktrees for coding agents. Safe by default.**
 
 **CLI command:** `cry`
 
@@ -14,11 +14,11 @@ npm install -g cluttry
 cd your-repo
 cry init
 
-# One command: create worktree → launch Claude → finish when done
-cry feat-login claude --finish-on-exit
+# One command: create worktree → launch Claude → auto-finish when done
+cry feat-login claude --auto
 ```
 
-That's it. When Claude exits, you'll see a menu to commit, create a PR, and clean up.
+That's it. When Claude exits, cry automatically commits, creates a PR, and cleans up.
 
 ## The Lifecycle
 
@@ -42,7 +42,10 @@ cry feat-auth claude
 # Explicit
 cry spawn feat-auth --new --agent claude
 
-# Full lifecycle in one command
+# Full autopilot: agent exits → commit → PR → cleanup
+cry feat-auth claude --auto
+
+# Interactive finish menu when agent exits
 cry feat-auth claude --finish-on-exit
 ```
 
@@ -50,7 +53,7 @@ cry feat-auth claude --finish-on-exit
 
 Your AI agent works in the isolated worktree. Each worktree has:
 - Its own branch
-- Copy of your `.env` and secret files
+- Copy of your `.env` and secret files (or injected env vars)
 - Independent git state
 
 Run multiple sessions in parallel—each in its own terminal.
@@ -64,10 +67,13 @@ cry finish
 ```
 
 Interactive flow:
-1. Shows session summary (branch, commits, diff stats)
-2. If dirty: offers to commit (with suggested message from branch name)
-3. Pushes branch and creates PR via `gh` CLI
-4. Offers cleanup prompt
+1. Runs `preFinish` hooks (tests, lint, etc.)
+2. Shows session summary (branch, commits, diff stats)
+3. If dirty: offers to commit (with suggested message from branch name)
+4. Pushes branch and creates PR via `gh` CLI
+5. Offers merge options (PR only, local merge, or gh merge)
+6. Runs `postFinish` hooks
+7. Offers cleanup prompt
 
 Non-interactive:
 ```bash
@@ -113,20 +119,53 @@ After `cry init`, edit `.cry.json`:
 {
   "include": [".env", ".env.*", "config/secrets.json"],
   "defaultMode": "copy",
-  "hooks": { "postCreate": ["npm install"] },
+  "hooks": {
+    "postCreate": ["npm install"],
+    "preFinish": ["npm test", "npm run lint"],
+    "postFinish": ["echo 'PR created!'"],
+    "preMerge": ["npm run build"]
+  },
   "agentCommand": "claude"
 }
 ```
 
 | Key | Description |
 |-----|-------------|
-| `include` | Glob patterns for files to copy to worktrees |
-| `defaultMode` | `copy`, `symlink`, or `none` |
+| `include` | Glob patterns for files to copy/inject to worktrees |
+| `defaultMode` | `copy`, `symlink`, `inject`, or `none` |
 | `hooks.postCreate` | Commands to run after spawn |
+| `hooks.preFinish` | Commands to run before finish (tests, lint) |
+| `hooks.postFinish` | Commands to run after PR creation |
+| `hooks.preMerge` | Commands to run before merge attempts |
 | `agentCommand` | Agent CLI command (default: `claude`) |
 | `editorCommand` | Editor command (default: `code`) |
+| `injectNonEnv` | For inject mode: `skip` or `symlink` non-dotenv files |
+| `agents` | Agent presets (see below) |
 
 Machine-specific overrides go in `.cry.local.json` (gitignored).
+
+### Agent Presets
+
+Configure per-agent behavior:
+
+```json
+{
+  "agents": {
+    "claude": {
+      "command": "claude",
+      "deny": [".env", ".env.*"],
+      "finishOnExitDefault": true
+    },
+    "cursor": {
+      "command": "cursor",
+      "args": ["."],
+      "finishOnExitDefault": false
+    }
+  }
+}
+```
+
+Built-in presets for `claude` and `cursor` are provided. Override or add your own.
 
 ## Security Model
 
@@ -151,13 +190,19 @@ cry explain-copy
 cry spawn feat-test --new --dry-run
 ```
 
-### Copy vs Symlink
+### Copy vs Symlink vs Inject
 
 | Mode | Behavior |
 |------|----------|
 | `copy` | Independent copies. Safe default. |
 | `symlink` | Linked to original. Changes sync everywhere. |
+| `inject` | **No files copied.** Env vars injected into commands. Safest for AI agents. |
 | `none` | Nothing copied. Set up secrets manually. |
+
+**Inject mode** is recommended when running AI agents:
+- Parses `.env` files and injects variables into hooks and agent commands
+- No secret files exist in the worktree for the agent to read
+- Non-dotenv files are skipped (or optionally symlinked via `injectNonEnv: "symlink"`)
 
 ## Commands
 
@@ -191,10 +236,13 @@ cry spawn feat-test --new --dry-run
 
 ```
 -n, --new               Create new branch
--a, --agent <agent>     Launch agent (claude, cursor, none)
+-a, --agent <agent>     Launch agent (claude, cursor, or custom preset)
 --finish-on-exit        Show finish menu when agent exits
+--auto                  Autopilot: auto-commit, PR, cleanup when agent exits
+--auto-merge            With --auto: also merge PR via gh
+--auto-commit-message   With --auto: custom commit message
 --base-branch <branch>  PR target branch
--m, --mode <mode>       Secret handling (copy, symlink, none)
+-m, --mode <mode>       Secret handling (copy, symlink, inject, none)
 -r, --run <cmd>         Run command after spawn
 --dry-run               Preview without creating
 ```
@@ -203,6 +251,10 @@ cry spawn feat-test --new --dry-run
 
 ```
 -m, --message <msg>     Commit with message (non-interactive)
+--skip-hooks            Skip all hooks (preFinish, postFinish, preMerge)
+--merge                 Merge locally into base branch after PR
+--pr-merge              Merge PR via GitHub (gh pr merge)
+--no-merge              Skip merge prompt (PR only)
 --cleanup               Auto-cleanup after PR
 --skip-commit           Skip commit step
 --non-interactive       Never prompt
@@ -252,7 +304,17 @@ brew install gh && gh auth login
 
 ### How do I prevent AI from reading secrets?
 
-For Claude Code, add to `.clauderc`:
+**Best option: Use inject mode** (no files copied to worktree):
+```bash
+cry spawn feat-auth --new --agent claude --mode inject
+```
+
+Or configure it as default in `.cry.json`:
+```json
+{ "defaultMode": "inject" }
+```
+
+For Claude Code specifically, you can also add to `.clauderc`:
 ```json
 { "deny": [".env", ".env.*"] }
 ```

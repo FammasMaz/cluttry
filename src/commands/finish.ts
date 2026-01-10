@@ -24,8 +24,11 @@ import {
   findSessionForCwd,
   findMainRepoRoot,
   deleteSession,
+  updateSessionManifest,
   type SessionManifest,
 } from '../lib/session.js';
+import { runHooks } from '../lib/hooks.js';
+import { getMergedConfig } from '../lib/config.js';
 import * as out from '../lib/output.js';
 import { fail, errors, printError } from '../lib/errors.js';
 
@@ -40,6 +43,10 @@ export interface FinishOptions {
   deleteBranch?: boolean;
   message?: string;
   skipCommit?: boolean;
+  skipHooks?: boolean;
+  merge?: boolean;
+  prMerge?: boolean;
+  noMerge?: boolean;
 }
 
 interface SessionSummary {
@@ -492,6 +499,107 @@ function createPullRequest(branch: string, baseBranch: string, cwd: string): { s
   }
 }
 
+type MergeAction = 'done' | 'local' | 'gh' | 'cancel';
+
+/**
+ * Perform local merge in the main worktree
+ */
+function performLocalMerge(
+  mainRepoRoot: string,
+  sessionBranch: string,
+  baseBranch: string,
+  dryRun: boolean
+): { success: boolean; error?: string } {
+  if (dryRun) {
+    out.log(out.fmt.dim('[dry-run] Would perform local merge:'));
+    out.log(out.fmt.dim(`  1. cd ${mainRepoRoot}`));
+    out.log(out.fmt.dim(`  2. git fetch origin && git checkout ${baseBranch}`));
+    out.log(out.fmt.dim(`  3. git merge --no-ff ${sessionBranch}`));
+    out.log(out.fmt.dim(`  4. git push origin ${baseBranch}`));
+    return { success: true };
+  }
+
+  try {
+    // Check if main worktree is clean
+    if (isWorktreeDirty(mainRepoRoot)) {
+      return { success: false, error: 'Main worktree has uncommitted changes. Please commit or stash them first.' };
+    }
+
+    // Save current branch to restore on failure
+    let originalBranch: string | null = null;
+    try {
+      originalBranch = getCurrentBranch(mainRepoRoot);
+    } catch {
+      // May be in detached HEAD
+    }
+
+    // Fetch and checkout base branch
+    out.log(`Fetching and checking out ${out.fmt.branch(baseBranch)}...`);
+    try {
+      git(['fetch', 'origin'], mainRepoRoot);
+    } catch {
+      // Fetch may fail if no remote, continue anyway
+    }
+    git(['checkout', baseBranch], mainRepoRoot);
+
+    // Try to merge
+    out.log(`Merging ${out.fmt.branch(sessionBranch)} into ${out.fmt.branch(baseBranch)}...`);
+    try {
+      git(['merge', '--no-ff', sessionBranch, '-m', `Merge branch '${sessionBranch}'`], mainRepoRoot);
+    } catch (mergeError) {
+      // Conflict detected - abort and restore
+      out.error('Merge conflict detected! Aborting merge...');
+      try {
+        git(['merge', '--abort'], mainRepoRoot);
+      } catch {
+        // Abort may fail if merge wasn't in progress
+      }
+      if (originalBranch && originalBranch !== baseBranch) {
+        try {
+          git(['checkout', originalBranch], mainRepoRoot);
+        } catch {
+          // Best effort restore
+        }
+      }
+      return { success: false, error: 'Merge conflicts detected. Please resolve manually or use PR workflow.' };
+    }
+
+    // Push to origin
+    out.log(`Pushing ${out.fmt.branch(baseBranch)} to origin...`);
+    try {
+      git(['push', 'origin', baseBranch], mainRepoRoot);
+      out.success('Local merge and push completed');
+    } catch (pushError) {
+      out.warn('Merge succeeded locally but push failed. You may need to push manually.');
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Merge PR using gh CLI
+ */
+function performPrMerge(branch: string, cwd: string): { success: boolean; error?: string } {
+  try {
+    const result = spawnSync('gh', ['pr', 'merge', '--merge', '--delete-branch', branch], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
+
+    if (result.status === 0) {
+      return { success: true };
+    } else {
+      return { success: false, error: result.stderr || 'Unknown error' };
+    }
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
 /**
  * Show git diff in pager
  */
@@ -798,9 +906,29 @@ export async function finish(options: FinishOptions): Promise<void> {
   // Print summary
   printSummary(summary);
 
+  // Load config for hooks
+  const mainRepoRoot = findMainRepoRoot(cwd);
+  const config = mainRepoRoot ? getMergedConfig(mainRepoRoot) : null;
+
   const isDirty = !summary.status.clean;
   const hasCommits = summary.commits.ahead > 0;
   const dryRun = options.dryRun ?? false;
+
+  // Run preFinish hooks
+  if (!options.skipHooks && config && config.hooks.preFinish.length > 0) {
+    if (dryRun) {
+      out.log(out.fmt.dim('[dry-run] Would run preFinish hooks:'));
+      for (const hook of config.hooks.preFinish) {
+        out.log(out.fmt.dim(`  - ${hook}`));
+      }
+    } else {
+      const hookResult = await runHooks('preFinish', config.hooks.preFinish, { cwd });
+      if (!hookResult.success) {
+        out.error('preFinish hooks failed. Aborting finish.');
+        process.exit(1);
+      }
+    }
+  }
 
   // Handle dirty state
   if (isDirty) {
@@ -903,12 +1031,111 @@ export async function finish(options: FinishOptions): Promise<void> {
       const prResult = createPullRequest(summary.branch, summary.baseBranch, cwd);
       if (prResult.success) {
         out.success(`PR created: ${prResult.url}`);
+
+        // Update session manifest with PR URL
+        if (sessionId && mainRepoRoot) {
+          updateSessionManifest(mainRepoRoot, sessionId, {
+            prUrl: prResult.url,
+            status: 'finished',
+            lastActiveAt: new Date().toISOString(),
+            lastFinishResult: {
+              success: true,
+              prCreated: true,
+              checksRan: false,
+            },
+          });
+        }
       } else {
         // PR might already exist
         if (prResult.error?.includes('already exists')) {
           out.info('A pull request already exists for this branch.');
         } else {
           out.warn(`Could not create PR: ${prResult.error}`);
+        }
+
+        // Update session manifest with finish result
+        if (sessionId && mainRepoRoot) {
+          updateSessionManifest(mainRepoRoot, sessionId, {
+            status: prResult.error?.includes('already exists') ? 'finished' : 'error',
+            lastActiveAt: new Date().toISOString(),
+            lastFinishResult: {
+              success: prResult.error?.includes('already exists') ?? false,
+              prCreated: false,
+              checksRan: false,
+              message: prResult.error,
+            },
+          });
+        }
+      }
+
+      // Merge options
+      let mergeAction: MergeAction = 'done';
+
+      // Handle non-interactive merge flags
+      if (options.merge) {
+        mergeAction = 'local';
+      } else if (options.prMerge) {
+        mergeAction = 'gh';
+      } else if (!options.noMerge && !options.nonInteractive) {
+        // Interactive merge menu
+        out.newline();
+        mergeAction = await promptChoice<MergeAction>(
+          'What would you like to do next?',
+          [
+            { key: 'p', label: 'Done (PR only)', value: 'done' },
+            { key: 'm', label: 'Merge locally into base branch', value: 'local' },
+            { key: 'g', label: 'Merge PR via GitHub (gh pr merge)', value: 'gh' },
+            { key: 'x', label: 'Cancel', value: 'cancel' },
+          ]
+        );
+      }
+
+      // Handle merge action
+      if (mergeAction === 'cancel') {
+        out.log('Cancelled.');
+        process.exit(0);
+      }
+
+      if (mergeAction === 'local' || mergeAction === 'gh') {
+        // Run preMerge hooks
+        if (!options.skipHooks && config && config.hooks.preMerge.length > 0) {
+          if (dryRun) {
+            out.log(out.fmt.dim('[dry-run] Would run preMerge hooks:'));
+            for (const hook of config.hooks.preMerge) {
+              out.log(out.fmt.dim(`  - ${hook}`));
+            }
+          } else {
+            const hookResult = await runHooks('preMerge', config.hooks.preMerge, { cwd });
+            if (!hookResult.success) {
+              out.error('preMerge hooks failed. Merge aborted.');
+              process.exit(1);
+            }
+          }
+        }
+
+        // Perform the merge
+        if (mergeAction === 'local') {
+          out.newline();
+          out.header('Local Merge');
+          const mergeResult = performLocalMerge(mainRepoRoot!, summary.branch, summary.baseBranch, dryRun);
+          if (!mergeResult.success) {
+            out.error(`Local merge failed: ${mergeResult.error}`);
+            process.exit(1);
+          }
+        } else if (mergeAction === 'gh') {
+          out.newline();
+          out.log('Merging PR via GitHub...');
+          if (dryRun) {
+            out.log(out.fmt.dim(`[dry-run] Would run: gh pr merge --merge --delete-branch ${summary.branch}`));
+          } else {
+            const mergeResult = performPrMerge(summary.branch, cwd);
+            if (mergeResult.success) {
+              out.success('PR merged and branch deleted via GitHub');
+            } else {
+              out.error(`PR merge failed: ${mergeResult.error}`);
+              process.exit(1);
+            }
+          }
         }
       }
     } else if (!ghAvailable) {
@@ -920,6 +1147,21 @@ export async function finish(options: FinishOptions): Promise<void> {
     }
   } else {
     out.log(out.fmt.dim('No commits to push.'));
+  }
+
+  // Run postFinish hooks
+  if (!options.skipHooks && config && config.hooks.postFinish.length > 0) {
+    if (dryRun) {
+      out.log(out.fmt.dim('[dry-run] Would run postFinish hooks:'));
+      for (const hook of config.hooks.postFinish) {
+        out.log(out.fmt.dim(`  - ${hook}`));
+      }
+    } else {
+      const hookResult = await runHooks('postFinish', config.hooks.postFinish, { cwd });
+      if (!hookResult.success) {
+        out.warn('postFinish hooks failed, but finish will continue.');
+      }
+    }
   }
 
   // Cleanup prompt

@@ -4,20 +4,41 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { MergedConfig, CryConfig, CryLocalConfig } from './types.js';
+import type { MergedConfig, CryConfig, CryLocalConfig, AgentPreset } from './types.js';
 
 export const CONFIG_FILE = '.cry.json';
 export const LOCAL_CONFIG_FILE = '.cry.local.json';
 export const WORKTREE_INCLUDE_FILE = '.worktreeinclude';
 
+/**
+ * Default agent presets (can be overridden in config)
+ */
+const DEFAULT_AGENT_PRESETS: Record<string, AgentPreset> = {
+  claude: {
+    command: 'claude',
+    deny: ['.env', '.env.*'],
+    finishOnExitDefault: true,
+  },
+  cursor: {
+    command: 'cursor',
+    args: ['.'],
+    finishOnExitDefault: false,
+  },
+};
+
 const DEFAULT_CONFIG: CryConfig = {
   defaultMode: 'copy',
   include: ['.env', '.env.*', '.env.local'],
+  injectNonEnv: 'skip',
   hooks: {
     postCreate: [],
+    preFinish: [],
+    postFinish: [],
+    preMerge: [],
   },
   agentCommand: 'claude',
   editorCommand: 'code',
+  agents: DEFAULT_AGENT_PRESETS,
 };
 
 /**
@@ -58,18 +79,38 @@ export function loadLocalConfig(repoRoot: string): CryLocalConfig | null {
 export function mergeConfig(config: CryConfig | null, localConfig: CryLocalConfig | null): MergedConfig {
   const base = config ?? DEFAULT_CONFIG;
 
+  // Merge agent presets: defaults + base config + local config
+  const mergedAgents: Record<string, AgentPreset> = {
+    ...DEFAULT_AGENT_PRESETS,
+    ...base.agents,
+  };
+
   return {
     worktreeBaseDir: localConfig?.worktreeBaseDir ?? base.worktreeBaseDir,
     defaultMode: base.defaultMode,
     include: [...(base.include ?? []), ...(localConfig?.include ?? [])],
+    injectNonEnv: base.injectNonEnv ?? 'skip',
     hooks: {
       postCreate: [
         ...(base.hooks?.postCreate ?? []),
         ...(localConfig?.hooks?.postCreate ?? []),
       ],
+      preFinish: [
+        ...(base.hooks?.preFinish ?? []),
+        ...(localConfig?.hooks?.preFinish ?? []),
+      ],
+      postFinish: [
+        ...(base.hooks?.postFinish ?? []),
+        ...(localConfig?.hooks?.postFinish ?? []),
+      ],
+      preMerge: [
+        ...(base.hooks?.preMerge ?? []),
+        ...(localConfig?.hooks?.preMerge ?? []),
+      ],
     },
     agentCommand: localConfig?.agentCommand ?? base.agentCommand ?? 'claude',
     editorCommand: localConfig?.editorCommand ?? base.editorCommand ?? 'code',
+    agents: mergedAgents,
   };
 }
 

@@ -155,15 +155,18 @@ program
   .option('-p, --path <dir>', 'Explicit path for the worktree')
   .option('-b, --base <dir>', 'Base directory for worktrees')
   .option('--base-branch <branch>', 'Base branch for PRs (default: current branch)')
-  .option('-m, --mode <mode>', 'Secret handling mode: copy, symlink, or none', 'copy')
+  .option('-m, --mode <mode>', 'Secret handling mode: copy, symlink, inject, or none', 'copy')
   .option('-r, --run <cmd>', 'Command to run after creating worktree')
   .option('-a, --agent <agent>', 'Launch agent after setup: claude or none', 'none')
   .option('--finish-on-exit', 'After agent exits, show finish menu (commit, PR, cleanup)')
+  .option('--auto', 'Autopilot: after agent exits, auto-commit, create PR, cleanup')
+  .option('--auto-merge', 'With --auto: also merge the PR via gh pr merge')
+  .option('--auto-commit-message <msg>', 'With --auto: use this commit message')
   .option('--dry-run', 'Show what would happen without creating the worktree')
   .action(async (branch: string, options) => {
     const mode = options.mode as SecretMode;
-    if (!['copy', 'symlink', 'none'].includes(mode)) {
-      console.error(`Invalid mode: ${mode}. Must be 'copy', 'symlink', or 'none'.`);
+    if (!['copy', 'symlink', 'inject', 'none'].includes(mode)) {
+      console.error(`Invalid mode: ${mode}. Must be 'copy', 'symlink', 'inject', or 'none'.`);
       process.exit(1);
     }
     await spawn(branch, {
@@ -175,6 +178,9 @@ program
       run: options.run,
       agent: options.agent,
       finishOnExit: options.finishOnExit,
+      auto: options.auto,
+      autoMerge: options.autoMerge,
+      autoCommitMessage: options.autoCommitMessage,
       dryRun: options.dryRun,
     });
   });
@@ -263,8 +269,12 @@ program
   .option('-j, --json', 'Output as JSON (summary only, no actions)')
   .option('-m, --message <msg>', 'Commit message (stages all, commits, non-interactive)')
   .option('--skip-commit', 'Skip commit step entirely (still safe)')
+  .option('--skip-hooks', 'Skip all hooks (preFinish, postFinish, preMerge)')
   .option('--dry-run', 'Show what would happen without executing')
   .option('--pr', 'Force PR creation path')
+  .option('--merge', 'Merge locally into base branch after PR (non-interactive)')
+  .option('--pr-merge', 'Merge PR via GitHub (gh pr merge) after creation')
+  .option('--no-merge', 'Skip merge prompt entirely (PR only)')
   .option('--cleanup', 'Auto-cleanup after successful PR (skip prompt)')
   .option('--skip-cleanup', 'Skip cleanup prompt entirely')
   .option('--non-interactive', 'Never prompt; errors on dirty unless --allow-dirty')
@@ -275,8 +285,12 @@ program
       json: options.json,
       message: options.message,
       skipCommit: options.skipCommit,
+      skipHooks: options.skipHooks,
       dryRun: options.dryRun,
       pr: options.pr,
+      merge: options.merge,
+      prMerge: options.prMerge,
+      noMerge: options.noMerge,
       cleanup: options.cleanup,
       noCleanup: options.skipCleanup,
       nonInteractive: options.nonInteractive,

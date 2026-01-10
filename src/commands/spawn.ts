@@ -22,7 +22,14 @@ import {
 } from '../lib/git.js';
 import { getMergedConfig, configExists } from '../lib/config.js';
 import { getDefaultWorktreePath } from '../lib/paths.js';
-import { processSecrets, generateCopyPlan, formatCopyPlan } from '../lib/secrets.js';
+import {
+  processSecrets,
+  generateCopyPlan,
+  formatCopyPlan,
+  processInjectMode,
+  generateInjectPlan,
+  formatInjectPlan,
+} from '../lib/secrets.js';
 import { createSessionManifest } from '../lib/session.js';
 import * as out from '../lib/output.js';
 import { fail, errors } from '../lib/errors.js';
@@ -38,6 +45,9 @@ interface SpawnOptions {
   run?: string;
   agent?: string;
   finishOnExit?: boolean;
+  auto?: boolean;          // Autopilot mode: finish-on-exit + auto-commit + PR
+  autoMerge?: boolean;     // Also merge the PR after creation
+  autoCommitMessage?: string; // Message for auto-commit
   dryRun?: boolean;
 }
 
@@ -47,7 +57,8 @@ interface SpawnOptions {
  */
 async function runAgentWithExitHandling(
   command: string,
-  cwd: string
+  cwd: string,
+  env?: Record<string, string>
 ): Promise<{ exitCode: number; interrupted: boolean }> {
   return new Promise((resolve) => {
     const isWindows = process.platform === 'win32';
@@ -59,7 +70,7 @@ async function runAgentWithExitHandling(
     const child = spawnProcess(shell, shellArgs, {
       cwd,
       stdio: 'inherit',
-      env: process.env,
+      env: env ? { ...process.env, ...env } : process.env,
     });
 
     // Handle Ctrl+C gracefully
@@ -148,6 +159,71 @@ async function showPostAgentMenu(
   }
 }
 
+/**
+ * Run autopilot finish flow after agent exits
+ * Non-interactive: auto-commits, creates PR, optionally merges
+ */
+async function runAutopilotFinish(
+  worktreePath: string,
+  agentExitCode: number,
+  interrupted: boolean,
+  options: { autoMerge?: boolean; autoCommitMessage?: string; branchName?: string }
+): Promise<void> {
+  // Change to worktree directory for finish command
+  process.chdir(worktreePath);
+
+  out.newline();
+  out.header('Autopilot: Agent Session Ended');
+
+  if (interrupted) {
+    out.warn('Agent was interrupted (Ctrl+C)');
+    out.info('Skipping autopilot finish due to interruption.');
+    out.log(`  ${out.fmt.dim('Run')} cry finish ${out.fmt.dim('manually to complete the session.')}`);
+    return;
+  }
+
+  if (agentExitCode !== 0) {
+    out.warn(`Agent exited with error (code ${agentExitCode})`);
+    out.info('Proceeding with autopilot finish despite agent error.');
+  } else {
+    out.success('Agent exited successfully');
+  }
+
+  out.newline();
+  out.log('Running autopilot finish...');
+
+  // Generate commit message if not provided
+  const commitMessage = options.autoCommitMessage ??
+    (options.branchName ? generateCommitMessageFromBranch(options.branchName) : undefined);
+
+  // Run finish in non-interactive mode
+  await finish({
+    nonInteractive: true,
+    message: commitMessage,
+    allowDirty: !commitMessage, // If no message, allow dirty (skip commit)
+    prMerge: options.autoMerge,
+    cleanup: true, // Auto cleanup on success
+  });
+}
+
+/**
+ * Generate a commit message from branch name
+ */
+function generateCommitMessageFromBranch(branch: string): string {
+  // Remove common prefixes
+  let message = branch
+    .replace(/^(feature|feat|fix|bugfix|hotfix|chore|refactor|docs|test|ci)[\/\-]/i, '')
+    .replace(/[-_]/g, ' ')
+    .trim();
+
+  // Capitalize first letter
+  if (message.length > 0) {
+    message = message.charAt(0).toUpperCase() + message.slice(1);
+  }
+
+  return message || branch;
+}
+
 export async function spawn(branch: string, options: SpawnOptions): Promise<void> {
   // Check if we're in a git repo
   if (!isGitRepo()) {
@@ -162,8 +238,27 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
     worktreeBaseDir: undefined,
     defaultMode: 'none' as SecretMode,
     include: [],
-    hooks: { postCreate: [] },
+    injectNonEnv: 'skip' as const,
+    hooks: {
+      postCreate: [],
+      preFinish: [],
+      postFinish: [],
+      preMerge: [],
+    },
     agentCommand: 'claude',
+    editorCommand: 'code',
+    agents: {
+      claude: {
+        command: 'claude',
+        deny: ['.env', '.env.*'],
+        finishOnExitDefault: true,
+      },
+      cursor: {
+        command: 'cursor',
+        args: ['.'],
+        finishOnExitDefault: false,
+      },
+    },
   };
 
   // Determine mode
@@ -270,28 +365,65 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   }
 
   // Handle secrets
+  let injectedEnv: Record<string, string> = {};
+
   if (mode !== 'none' && config.include.length > 0) {
     out.newline();
     out.log(`Processing secrets (${mode} mode)...`);
 
-    const { processed, skipped } = await processSecrets(
-      mode,
-      config.include,
-      repoRoot,
-      worktreePath
-    );
+    if (mode === 'inject') {
+      // Inject mode: parse dotenv files, don't copy
+      const result = await processInjectMode(
+        config.include,
+        repoRoot,
+        worktreePath,
+        { injectNonEnv: config.injectNonEnv }
+      );
 
-    if (processed.length > 0) {
-      out.success(`${mode === 'copy' ? 'Copied' : 'Symlinked'} ${processed.length} file(s):`);
-      for (const file of processed) {
-        out.log(`    ${out.fmt.dim('•')} ${file}`);
+      injectedEnv = result.env;
+
+      if (result.processedEnvFiles.length > 0) {
+        out.success(`Parsed ${result.processedEnvFiles.length} dotenv file(s) for injection:`);
+        for (const file of result.processedEnvFiles) {
+          out.log(`    ${out.fmt.dim('•')} ${file}`);
+        }
+        out.log(`    ${out.fmt.dim(`(${Object.keys(injectedEnv).length} env vars will be injected)`)}`);
       }
-    }
 
-    if (skipped.length > 0) {
-      out.warn(`Skipped ${skipped.length} file(s) for safety:`);
-      for (const file of skipped) {
-        out.log(`    ${out.fmt.dim('•')} ${file.path}: ${file.reason}`);
+      if (result.symlinkFiles.length > 0) {
+        out.success(`Symlinked ${result.symlinkFiles.length} non-dotenv file(s):`);
+        for (const file of result.symlinkFiles) {
+          out.log(`    ${out.fmt.dim('•')} ${file}`);
+        }
+      }
+
+      if (result.skippedFiles.length > 0) {
+        out.info(`Skipped ${result.skippedFiles.length} non-dotenv file(s) (not copied to worktree):`);
+        for (const file of result.skippedFiles) {
+          out.log(`    ${out.fmt.dim('•')} ${file}`);
+        }
+      }
+    } else {
+      // Copy or symlink mode
+      const { processed, skipped } = await processSecrets(
+        mode,
+        config.include,
+        repoRoot,
+        worktreePath
+      );
+
+      if (processed.length > 0) {
+        out.success(`${mode === 'copy' ? 'Copied' : 'Symlinked'} ${processed.length} file(s):`);
+        for (const file of processed) {
+          out.log(`    ${out.fmt.dim('•')} ${file}`);
+        }
+      }
+
+      if (skipped.length > 0) {
+        out.warn(`Skipped ${skipped.length} file(s) for safety:`);
+        for (const file of skipped) {
+          out.log(`    ${out.fmt.dim('•')} ${file.path}: ${file.reason}`);
+        }
       }
     }
   }
@@ -303,7 +435,7 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
     out.log('Running post-create hooks...');
     for (const hook of hooks) {
       out.log(`  ${out.fmt.dim('$')} ${hook}`);
-      const code = await runCommand(hook, worktreePath);
+      const code = await runCommand(hook, worktreePath, injectedEnv);
       if (code !== 0) {
         out.warn(`Hook exited with code ${code}`);
       }
@@ -315,30 +447,67 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
     out.newline();
     out.log('Running custom command...');
     out.log(`  ${out.fmt.dim('$')} ${options.run}`);
-    const code = await runCommand(options.run, worktreePath);
+    const code = await runCommand(options.run, worktreePath, injectedEnv);
     if (code !== 0) {
       out.warn(`Command exited with code ${code}`);
     }
   }
 
   // Handle agent launch
-  if (agentChoice === 'claude' || agentChoice === 'cursor') {
+  if (agentChoice !== 'none') {
+    // Look up agent preset from config
+    const agentPreset = config.agents[agentChoice];
+
     // Determine the actual command to run
-    // For 'claude', use config.agentCommand (defaults to 'claude')
-    // For 'cursor', use 'cursor' command
-    const agentCmd = agentChoice === 'cursor' ? 'cursor' : config.agentCommand;
+    let agentCmd: string;
+    let agentArgs: string[] = [];
+    let agentEnv: Record<string, string> = { ...injectedEnv };
+
+    if (agentPreset) {
+      agentCmd = agentPreset.command;
+      agentArgs = agentPreset.args ?? [];
+      if (agentPreset.env) {
+        agentEnv = { ...agentEnv, ...agentPreset.env };
+      }
+    } else if (agentChoice === 'cursor') {
+      agentCmd = 'cursor';
+      agentArgs = ['.'];
+    } else {
+      agentCmd = config.agentCommand;
+    }
+
+    // Apply finishOnExitDefault from preset if not explicitly set
+    const presetFinishOnExit = agentPreset?.finishOnExitDefault ?? false;
+    const useFinishOnExit = options.auto || (options.finishOnExit ?? presetFinishOnExit);
+
     out.newline();
 
     if (commandExists(agentCmd)) {
-      out.log(`Launching ${agentCmd}...`);
+      // Build full command with args
+      const fullCommand = agentArgs.length > 0
+        ? `${agentCmd} ${agentArgs.join(' ')}`
+        : agentCmd;
 
-      if (options.finishOnExit) {
-        // Use special handler that waits for exit and shows menu
-        const { exitCode, interrupted } = await runAgentWithExitHandling(agentCmd, worktreePath);
-        await showPostAgentMenu(worktreePath, exitCode, interrupted);
+      out.log(`Launching ${agentCmd}${agentArgs.length > 0 ? ' ' + agentArgs.join(' ') : ''}...`);
+
+      if (useFinishOnExit) {
+        // Use special handler that waits for exit
+        const { exitCode, interrupted } = await runAgentWithExitHandling(fullCommand, worktreePath, agentEnv);
+
+        if (options.auto) {
+          // Autopilot mode: non-interactive finish
+          await runAutopilotFinish(worktreePath, exitCode, interrupted, {
+            autoMerge: options.autoMerge,
+            autoCommitMessage: options.autoCommitMessage,
+            branchName: branch,
+          });
+        } else {
+          // Interactive finish menu
+          await showPostAgentMenu(worktreePath, exitCode, interrupted);
+        }
       } else {
         // Just run the command normally
-        await runCommand(agentCmd, worktreePath);
+        await runCommand(fullCommand, worktreePath, agentEnv);
       }
     } else {
       out.warn(`Agent command '${agentCmd}' not found.`);
@@ -347,7 +516,7 @@ export async function spawn(branch: string, options: SpawnOptions): Promise<void
   }
 
   // Final summary (only if not using finish-on-exit, since finish handles its own output)
-  if (!options.finishOnExit || agentChoice === 'none') {
+  if (!options.finishOnExit && !options.auto || agentChoice === 'none') {
     out.newline();
     out.header('Worktree ready');
     out.log(`  ${out.fmt.dim('cd')} ${worktreePath}`);
